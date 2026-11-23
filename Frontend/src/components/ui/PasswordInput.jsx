@@ -5,11 +5,11 @@ import Input from './Input';
 const SEGMENTS = 4;
 
 // How many of the 4 bars fill, and in which colour, for each level (Figma: weak = 1 orange,
-// strong = 3 green; fair sits between). 'none' shows the empty bars, e.g. before typing.
+// fair = 2 orange, strong = 3 green). 'none' shows the empty bars, e.g. before typing.
 const LEVELS = {
   none: { filled: 0, color: '', label: '' },
   weak: { filled: 1, color: 'bg-accent', label: 'Weak' },
-  fair: { filled: 2, color: 'bg-caution', label: 'Fair' },
+  fair: { filled: 2, color: 'bg-accent', label: 'Fair' },
   strong: { filled: 3, color: 'bg-success', label: 'Strong' },
 };
 

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Alert from '../../../components/ui/Alert';
 import Button from '../../../components/ui/Button';
 import Checkbox from '../../../components/ui/Checkbox';
@@ -8,7 +8,8 @@ import GoogleButton from '../../../components/ui/GoogleButton';
 import Input from '../../../components/ui/Input';
 import PasswordInput from '../../../components/ui/PasswordInput';
 import AuthLayout from '../components/AuthLayout';
-import { getFieldErrors, login } from '../auth.api';
+import { useAuth } from '../../../hooks/useAuth';
+import { getFieldErrors } from '../auth.api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOCKOUT_HINT = 'After 5 failed tries, log in pauses for 15 minutes.';
@@ -30,7 +31,7 @@ function validate({ email, password }) {
 }
 
 export default function LoginPage() {
-  const navigate = useNavigate();
+  const { login } = useAuth();
   const location = useLocation();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
@@ -84,9 +85,9 @@ export default function LoginPage() {
     setWrongPassword(false);
 
     try {
+      // Stores the user; RedirectIfAuthenticated then moves on to the page they came from,
+      // /home, or whichever step is unfinished (verify email, onboarding).
       await login({ email: email.trim(), password, remember });
-      // TODO: store the user in auth state and send them to the dashboard once those exist.
-      navigate(location.state?.from?.pathname ?? '/', { replace: true });
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
 
@@ -189,6 +190,7 @@ export default function LoginPage() {
             />
             <Link
               to="/forgot-password"
+              state={{ email: email.trim() }}
               className="mt-2 self-end rounded text-xs font-semibold text-muted underline underline-offset-2 hover:text-ink"
             >
               Forgot password?

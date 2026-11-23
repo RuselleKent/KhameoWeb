@@ -6,15 +6,18 @@ const base =
   'inline-flex items-center justify-center gap-2 rounded-xl font-semibold whitespace-nowrap ' +
   'transition-colors duration-150 ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ' +
-  // Disabled buttons fade out; a loading button (aria-busy) stays at full strength.
-  'disabled:pointer-events-none disabled:not-aria-busy:opacity-50 aria-busy:cursor-wait';
+  'disabled:pointer-events-none aria-busy:cursor-wait';
+
+// Disabled styles skip loading buttons (aria-busy) so the spinner stays at full strength.
+const fade = 'disabled:not-aria-busy:opacity-50';
 
 const variants = {
-  primary: 'bg-brand text-white hover:bg-brand-dark',
-  secondary: 'border border-line bg-white text-brand hover:bg-canvas',
+  // Figma shows a disabled primary button as flat #BFD2D1, not a faded brand colour.
+  primary: 'bg-brand text-white hover:bg-brand-dark disabled:not-aria-busy:bg-brand-disabled',
+  secondary: `border border-line bg-white text-brand hover:bg-canvas ${fade}`,
   // Same outline as secondary but with dark text (used by GoogleButton).
-  neutral: 'border border-line bg-white text-ink hover:bg-canvas',
-  ghost: 'text-ink hover:bg-ink/5',
+  neutral: `border border-line bg-white text-ink hover:bg-canvas ${fade}`,
+  ghost: `text-ink hover:bg-ink/5 ${fade}`,
 };
 
 const sizes = {

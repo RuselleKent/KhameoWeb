@@ -24,8 +24,9 @@
   /* Feedback */
   --color-danger: #B5061A;       /* error text and "!" badge */
   --color-danger-line: #E41105;  /* border of a field with an error */
-  --color-success: #1E7B45;      /* border of a field confirmed valid */
-  --color-caution: #E5A23A;      /* "fair" password strength */
+  --color-success: #1E7B45;      /* border of a field confirmed valid, strong password */
+  --color-success-soft: #E3F4EA; /* background of success check badges */
+  --color-brand-disabled: #BFD2D1; /* disabled primary button */
 
   /* Fonts: font-display for headings, font-sans (default) for body */
   --font-display: "Cal Sans", ui-sans-serif, system-ui, sans-serif;

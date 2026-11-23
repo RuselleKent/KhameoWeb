@@ -8,7 +8,8 @@ import GoogleButton from '../../../components/ui/GoogleButton';
 import Input from '../../../components/ui/Input';
 import PasswordInput from '../../../components/ui/PasswordInput';
 import AuthLayout from '../components/AuthLayout';
-import { getFieldErrors, register } from '../auth.api';
+import { useAuth } from '../../../hooks/useAuth';
+import { getFieldErrors } from '../auth.api';
 import { MIN_PASSWORD_LENGTH, getPasswordStrength } from '../passwordStrength';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -43,6 +44,7 @@ function validate(v) {
 export default function SignupPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { register } = useAuth();
   const emailRef = useRef(null);
 
   const [values, setValues] = useState({
@@ -116,7 +118,7 @@ export default function SignupPage() {
 
     try {
       const email = values.email.trim();
-      await register({
+      const { verification } = await register({
         name: values.name.trim(),
         email,
         password: values.password,
@@ -124,7 +126,8 @@ export default function SignupPage() {
         confirmed_age: values.confirmedAge,
         accepted_terms: values.acceptedTerms,
       });
-      navigate('/verify-email', { replace: true, state: { email } });
+      // The verify page starts its expiry and resend timers from `verification`.
+      navigate('/verify-email', { replace: true, state: { email, verification } });
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
       const mapped = {};
