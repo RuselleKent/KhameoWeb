@@ -1,0 +1,27 @@
+# Environment files (commit .env.example instead)
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+Backend/vendor/
+
+# Build output
+Frontend/dist/
+Frontend/dist-ssr/
+Backend/public/build/
+Backend/public/hot
+Backend/public/storage
+Backend/storage/*.key
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

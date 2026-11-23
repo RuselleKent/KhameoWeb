@@ -1,0 +1,29 @@
+@import url("https://fonts.googleapis.com/css2?family=Cal+Sans&family=Geist:wght@100..900&display=swap");
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-brand: #285755;
+  --color-brand-dark: #154A42;
+  --color-accent: #FD8B47;
+  --color-ink: #1A2320;
+  --color-muted: #59625E;
+  --color-canvas: #F6F5F2;
+
+  /* Fonts: font-display for headings, font-sans (default) for body */
+  --font-display: "Cal Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+
+  /* Card radius (16–18px per design system) */
+  --radius-card: 18px;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
