@@ -10,6 +10,23 @@
   --color-muted: #59625E;
   --color-canvas: #F6F5F2;
 
+  /* Borders and lines (from the Figma auth screens) */
+  --color-line: #CFC9BC;         /* outline buttons */
+  --color-field: #D9D3C7;        /* empty input border */
+  --color-field-filled: #105555; /* input border once it has a value */
+  --color-divider: #E7E2D9;      /* "or" divider, empty strength-meter bars */
+
+  /* Brand panel (auth screens) */
+  --color-panel: #032424;        /* dark teal base */
+  --color-mint: #2DBDA8;         /* "They adapt." highlight */
+  --color-mint-light: #54D2C0;   /* panel edge stripe */
+
+  /* Feedback */
+  --color-danger: #B5061A;       /* error text and "!" badge */
+  --color-danger-line: #E41105;  /* border of a field with an error */
+  --color-success: #1E7B45;      /* border of a field confirmed valid */
+  --color-caution: #E5A23A;      /* "fair" password strength */
+
   /* Fonts: font-display for headings, font-sans (default) for body */
   --font-display: "Cal Sans", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
