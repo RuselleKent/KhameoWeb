@@ -7,6 +7,7 @@ import RequireOnboarded from './RequireOnboarded';
 import LandingPage from '../features/landing/LandingPage';
 import WelcomePage from '../features/auth/pages/WelcomePage';
 import LoginPage from '../features/auth/pages/LoginPage';
+import LoginVerifyPage from '../features/auth/pages/LoginVerifyPage';
 import SignupPage from '../features/auth/pages/SignupPage';
 import VerifyEmailPage from '../features/auth/pages/VerifyEmailPage';
 import ForgotPasswordPage from '../features/auth/pages/ForgotPasswordPage';
@@ -16,6 +17,7 @@ import OnboardingLayout from '../features/onboarding/components/OnboardingLayout
 import ConsentPage from '../features/onboarding/pages/ConsentPage';
 import ChoosePathPage from '../features/onboarding/pages/ChoosePathPage';
 import NextStepPage from '../features/onboarding/pages/NextStepPage';
+import TwoFactorPage from '../features/onboarding/pages/TwoFactorPage';
 import { PATHS } from '../features/onboarding/paths';
 import HomePage from '../features/home/pages/HomePage';
 
@@ -33,6 +35,7 @@ export const router = createBrowserRouter([
           { index: true, element: <LandingPage /> },
           { path: 'welcome', element: <WelcomePage /> },
           { path: 'login', element: <LoginPage /> },
+          { path: 'login/verify', element: <LoginVerifyPage /> },
           { path: 'signup', element: <SignupPage /> },
           { path: 'verify-email', element: <VerifyEmailPage /> },
           { path: 'forgot-password', element: <ForgotPasswordPage /> },
@@ -47,7 +50,9 @@ export const router = createBrowserRouter([
             path: 'onboarding',
             element: <OnboardingRoot />,
             children: [
+              // Full-page screens with the auth split panel.
               { path: 'consent', element: <ConsentPage /> },
+              { path: 'host/two-factor', element: <TwoFactorPage /> },
               {
                 element: <OnboardingLayout />,
                 children: [
@@ -55,9 +60,27 @@ export const router = createBrowserRouter([
                   // Step 2 of each path; placeholders for now.
                   ...PATHS.map(({ id }) => ({
                     path: id,
-                    element: <NextStepPage pathId={id} />,
+                    element: (
+                      <NextStepPage
+                        pathId={id}
+                        continueTo={id === 'host' ? '/onboarding/host/two-factor' : undefined}
+                      />
+                    ),
                     handle: { step: 2, totalSteps: 4 },
                   })),
+                  // H3, after two-factor; placeholder for now.
+                  {
+                    path: 'host/role-proof',
+                    element: (
+                      <NextStepPage
+                        pathId="host"
+                        title="Role proof"
+                        backTo="/onboarding/host/two-factor"
+                        requireTwoFactor
+                      />
+                    ),
+                    handle: { step: 3, totalSteps: 4 },
+                  },
                 ],
               },
             ],

@@ -25,8 +25,9 @@ function SessionError({ onRetry }) {
  * On start it asks the API who is signed in (getUser): 401 means nobody, other failures show Retry.
  * Children only render once that check is done, so guards never see a half-loaded state.
  *
- * Context value: { user, login, register, logout, setUser }
- * - login / register call the API and store the returned user
+ * Context value: { user, login, loginTwoFactor, register, logout, setUser }
+ * - login / loginTwoFactor / register call the API and store the returned user
+ * - login may instead return { two_factor_required: true }: nobody is signed in until loginTwoFactor
  * - setUser(user) stores a user a page already got from the API (verify email, reset password)
  */
 export default function AuthProvider({ children }) {
@@ -66,7 +67,13 @@ export default function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (credentials) => {
-    const signedIn = await authApi.login(credentials);
+    const result = await authApi.login(credentials);
+    if (!result.two_factor_required) setUser(result);
+    return result;
+  }, []);
+
+  const loginTwoFactor = useCallback(async ({ code }) => {
+    const signedIn = await authApi.loginTwoFactor({ code });
     setUser(signedIn);
     return signedIn;
   }, []);
@@ -86,7 +93,10 @@ export default function AuthProvider({ children }) {
     }
   }, []);
 
-  const value = useMemo(() => ({ user, login, register, logout, setUser }), [user, login, register, logout]);
+  const value = useMemo(
+    () => ({ user, login, loginTwoFactor, register, logout, setUser }),
+    [user, login, loginTwoFactor, register, logout],
+  );
 
   if (status === 'loading') return <PageLoader />;
   if (status === 'error') return <SessionError onRetry={retry} />;

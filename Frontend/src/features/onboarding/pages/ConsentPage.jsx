@@ -47,7 +47,7 @@ export default function ConsentPage() {
   const { updateAnswers } = useOnboarding();
 
   // Coming back with the browser's Back button after agreeing: show it as agreed, don't ask twice.
-  const alreadyAgreed = Boolean(user.consent_at);
+  const alreadyAgreed = Boolean(user.recording_consent_at);
   const [understood, setUnderstood] = useState(alreadyAgreed);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -64,7 +64,7 @@ export default function ConsentPage() {
     setSaving(true);
     setFailed(false);
     try {
-      setUser(await saveConsent({ research_consent: true }));
+      setUser(await saveConsent({ recording_consent: true }));
       navigate('/onboarding');
     } catch {
       setFailed(true);
@@ -118,7 +118,7 @@ export default function ConsentPage() {
           {alreadyAgreed ? 'Continue' : 'Agree and continue'}
         </Button>
         {!alreadyAgreed && (
-          <Button variant="ghost" size="block" className="text-brand" disabled={saving} onClick={handleNotNow}>
+          <Button variant="ghostBrand" size="block" disabled={saving} onClick={handleNotNow}>
             Not now
           </Button>
         )}

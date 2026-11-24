@@ -8,7 +8,8 @@ Changes:
 - Rev 2: **verify email** and **resend verification code** (sections 3 and 4).
 - Rev 3: **current user** and **log out** (sections 7 and 8), `onboarded_at` on the user, and the
   **session and redirect rules** the frontend route guards follow.
-- Rev 4: `consent_at` on the user; onboarding endpoints moved to `docs/api-onboarding.md`.
+- Rev 4: consent, profile and two-factor fields on the user; onboarding endpoints are in `docs/api-onboarding.md`.
+- Rev 5: machine-readable reasons are always **`code`** (was `error`); **two-factor log in** (section 2).
 
 ## Conventions
 
@@ -18,7 +19,8 @@ Changes:
   ```json
   { "message": "The given data was invalid.", "errors": { "email": ["Enter a valid email address."] } }
   ```
-- When the frontend must tell different failures apart, add a machine-readable `error` string next to `errors` (used by verify email).
+- When the frontend must tell failures apart, add a machine-readable **`code`** string: `{ "message": "…", "code": "consent_required" }`. This is the only name for it, on every status.
+  On a 422 it sits next to `errors`. Plain field validation has no `code`.
 - Rate limits return **429** with `retry_after` in seconds (also send the `Retry-After` header):
   ```json
   { "message": "Too many requests.", "retry_after": 298 }
@@ -31,6 +33,8 @@ Changes:
 |---|---|---|---|
 | 1 | `POST /api/register` | /signup | guest |
 | 2 | `POST /api/login` | /login | guest |
+| 2a | `POST /api/login/two-factor` | /login/verify | guest, log in pending |
+| 2b | `POST /api/login/two-factor/resend` | /login/verify | guest, log in pending |
 | 3 | `POST /api/email/verify` | /verify-email | see note |
 | 4 | `POST /api/email/resend` | /verify-email | see note |
 | 5 | `POST /api/forgot-password` | /forgot-password | guest |
@@ -47,15 +51,24 @@ Every endpoint that returns a user uses this shape:
   "name": "Jane Cruz",
   "email": "jane.cruz@gmail.com",
   "email_verified_at": "2026-11-23T08:04:10.000000Z",
-  "consent_at": "2026-11-23T08:06:00.000000Z",
+  "recording_consent_at": "2026-11-23T08:06:00.000000Z",
+  "consent_version": "2026-11",
   "onboarded_at": "2026-11-23T08:10:00.000000Z",
+  "onboarding_path": "personal",
+  "display_name": "Jane Cruz",
+  "username": "jane_cruz",
+  "bio": null,
+  "occupation": "Student",
+  "avatar_url": null,
+  "two_factor_confirmed_at": null,
   "created_at": "2026-11-23T08:00:00.000000Z",
   "updated_at": "2026-11-23T08:10:00.000000Z"
 }
 ```
 `email_verified_at` and `onboarded_at` are `null` until those steps are done; the route guards
-depend on both (see "Session and redirect rules"). `consent_at` is `null` unless the user has agreed to
-the recording & AI terms (see `docs/api-onboarding.md`); it can stay `null` after onboarding.
+depend on both (see "Session and redirect rules"). The consent, profile and two-factor fields are all
+`null` on a new account; `docs/api-onboarding.md` explains them. `recording_consent_at` can stay `null`
+after onboarding. Examples below leave out fields that don't matter there.
 
 Note on 3 and 4: after `register` the user is signed in, so these could take the email from the
 session. The frontend sends `email` anyway so the page also works after a reload or on another
@@ -86,7 +99,7 @@ Rules: `name` required; `email` required, valid, unique; `password` min 8, confi
 ```json
 {
   "user": { "id": 3, "name": "Jane Cruz", "email": "jane.cruz@gmail.com", "email_verified_at": null,
-            "consent_at": null, "onboarded_at": null,
+            "recording_consent_at": null, "consent_version": null, "onboarded_at": null,
             "created_at": "2026-11-23T08:00:00.000000Z", "updated_at": "2026-11-23T08:00:00.000000Z" },
   "verification": { "expires_in": 600, "resend_in": 60 }
 }
@@ -108,7 +121,14 @@ Rules: `name` required; `email` required, valid, unique; `password` min 8, confi
 
 Request: `{ "email": "...", "password": "...", "remember": false }`
 
-**200** — the user object (same shape as in register).
+**200**, two-factor off — starts the session; the user object.
+
+**200**, two-factor on (`two_factor_confirmed_at` is set; Hosts must have it) — **no session yet**, and a
+6-digit code is emailed. The frontend goes to `/login/verify`:
+```json
+{ "two_factor_required": true }
+```
+If a code was sent less than 60 seconds ago it stays valid and no new one is sent **[proposed]**.
 
 **422**
 | Field | When | Message |
@@ -117,6 +137,32 @@ Request: `{ "email": "...", "password": "...", "remember": false }`
 | `password` | wrong password | That password isn’t right. Try again, or reset it. |
 
 **429** after 5 failed tries; login pauses for 15 minutes (`retry_after` ≈ 900).
+
+Items marked **[proposed]** here and in 2a/2b were filled in by the frontend and need Russel's review.
+
+### 2a. Finish a two-factor log in — `POST /api/login/two-factor`
+
+Request: `{ "code": "123456" }`. The server remembers who is logging in (and `remember`) in the guest
+session, so the email isn't sent again **[proposed]**.
+
+**200** — starts the session; the user object.
+
+**422** — the same codes and rules as verify email (section 3): `code_invalid` (with `attempts_left`),
+`code_expired`, `too_many_attempts` **[proposed]**.
+
+**401** — no log in is waiting, or it is older than 15 minutes **[proposed]**:
+```json
+{ "message": "Log in again.", "code": "login_expired" }
+```
+
+### 2b. Resend the log in code — `POST /api/login/two-factor/resend`
+
+No body. **200** — `{ "message": "We sent a new code.", "expires_in": 600, "resend_in": 60 }` **[proposed body]**
+
+**429** — called during the cooldown: `{ "message": "…", "retry_after": 42 }`. **401** `login_expired`, as in 2a.
+
+`POST /api/user/two-factor/send` and `/confirm` (`docs/api-onboarding.md`) are only for turning two-factor
+on the first time.
 
 ## 3. Verify email — `POST /api/email/verify`
 
@@ -137,9 +183,9 @@ Server rules:
 { "user": { "id": 3, "name": "Jane Cruz", "email": "jane.cruz@gmail.com", "email_verified_at": "2026-11-23T08:04:10.000000Z" } }
 ```
 
-**422** — always includes `error` so the page knows which state to show:
+**422** — always includes `code` so the page knows which state to show:
 
-| `error` | When | Extra fields | Screen |
+| `code` | When | Extra fields | Screen |
 |---|---|---|---|
 | `code_invalid` | wrong code, tries left | `attempts_left` (1–2) | "That code isn’t right. 2 attempts left." |
 | `code_expired` | older than 10 minutes | — | "This code has expired" + Send a new code |
@@ -150,7 +196,7 @@ Example:
 {
   "message": "That code isn’t right.",
   "errors": { "code": ["That code isn’t right."] },
-  "error": "code_invalid",
+  "code": "code_invalid",
   "attempts_left": 2
 }
 ```
@@ -243,13 +289,14 @@ Implemented in `Frontend/src/app/` (`AuthProvider`, `RedirectIfAuthenticated`, `
 
 | Route group | Routes | Signed out | Signed in |
 |---|---|---|---|
-| Public | `/`, `/welcome`, `/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password` | show the page | go to the next step; `/verify-email` itself stays open for unverified users. After logging in, a user sent to `/login` from a protected page goes back to that page. |
+| Public | `/`, `/welcome`, `/login`, `/login/verify`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password` | show the page | go to the next step; `/verify-email` itself stays open for unverified users. After logging in, a user sent to `/login` from a protected page goes back to that page. `/login/verify` without a log in in progress → `/login`. |
 | Signed in | `/onboarding` and the steps under it (see `docs/api-onboarding.md`) | → `/login` | unverified → `/verify-email`; already onboarded → `/home` |
 | Signed in + onboarded | `/home` (and future app pages) | → `/login` (remembers the page) | unverified → `/verify-email`; not onboarded → `/onboarding` |
 
 What this means for the backend:
 - `register` signs the user in (unverified) so `/verify-email` works right after sign-up.
 - `login` succeeds for unverified users too; the frontend sends them to `/verify-email`.
+- `login` does **not** sign in a user with two-factor on; `login/two-factor` does.
 - `reset-password` signs the user in on this device.
 - `PATCH /api/user/onboarding` sets `onboarded_at` when onboarding finishes (`docs/api-onboarding.md`).
 
@@ -259,4 +306,7 @@ What this means for the backend:
 
 1. Verify/resend: identify the user from the session or from `email`? (see note above)
 2. ~~Login of an unverified account~~ — decided in rev 3: login succeeds, the frontend redirects to /verify-email. Shout if the backend needs it the other way.
-3. Google sign-in (button exists on /login and /signup): which flow and endpoint?
+3. Google sign-in (button exists on /login and /signup): which flow and endpoint? The Figma 2FA screen says
+   two-factor applies "including when you sign in with Google", so it must also end at `/login/verify`.
+4. `reset-password` signs the user in (section 6). With two-factor on, that skips the code. Suggestion: for
+   those users, answer `{ "two_factor_required": true }` like log in does.

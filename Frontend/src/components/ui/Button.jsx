@@ -18,6 +18,8 @@ const variants = {
   // Same outline as secondary but with dark text (used by GoogleButton).
   neutral: `border border-line bg-white text-ink hover:bg-canvas ${fade}`,
   ghost: `text-ink hover:bg-ink/5 ${fade}`,
+  // Ghost with the brand colour ("Not now" on the consent screen).
+  ghostBrand: `text-brand hover:bg-brand/5 ${fade}`,
 };
 
 const sizes = {

@@ -1,5 +1,7 @@
 // Mock data for onboarding. Field names follow docs/api-onboarding.md.
 
+export const CONSENT_VERSION = '2026-11';
+
 export const ONBOARDING_PATHS = ['personal', 'member', 'coach', 'host'];
 
 export const ONBOARDING_GOALS = [

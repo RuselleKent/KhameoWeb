@@ -7,11 +7,13 @@ const EMPTY_ANSWERS = {
   consentSkipped: false, // picked "Not now" on the consent screen
   path: null,
   goals: [],
-  profile: { display_name: '', avatar: null },
+  // The photo is uploaded on its own (uploadAvatar), so it isn't kept here.
+  profile: { display_name: '', username: '', bio: '', occupation: '' },
 };
 
+// v2: bumped when the profile fields changed, so older drafts are ignored.
 // created_at keeps two accounts apart if a mock id is ever reused.
-const storageKeyFor = (user) => `khameo.onboarding.${user.id}.${user.created_at}`;
+const storageKeyFor = (user) => `khameo.onboarding.v2.${user.id}.${user.created_at}`;
 
 function readAnswers(key, user) {
   const initial = { ...EMPTY_ANSWERS, profile: { ...EMPTY_ANSWERS.profile, display_name: user.name ?? '' } };

@@ -14,7 +14,7 @@ export default function OnboardingLayout() {
   const { answers } = useOnboarding();
   const progress = useMatches().findLast((match) => match.handle?.step)?.handle;
 
-  if (!user.consent_at && !answers.consentSkipped) return <Navigate to="/onboarding/consent" replace />;
+  if (!user.recording_consent_at && !answers.consentSkipped) return <Navigate to="/onboarding/consent" replace />;
 
   return (
     <div className="min-h-dvh bg-canvas">
