@@ -1,4 +1,5 @@
 import api, { getCsrfCookie } from '../../lib/api';
+import { apiError, rateLimitError, readSession, validationError, wait, writeSession } from '../../mockdata/mockServer';
 import { mockAccounts } from '../../mockdata/user';
 
 // Flip to false once the endpoints in docs/api-auth.md are ready.
@@ -134,42 +135,8 @@ const RESET_LINK_COOLDOWN_SECONDS = 300;
 const verificationByEmail = new Map(); // email → { attemptsLeft, expiresAt, resendAt }
 const resetRequestedAt = new Map(); // email → timestamp
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function apiError(status, data) {
-  const error = new Error(data.message);
-  error.response = { status, data };
-  return error;
-}
-
-const validationError = (message, errors, extra = {}) => apiError(422, { message, errors, ...extra });
-const rateLimitError = (message, retryAfter) => apiError(429, { message, retry_after: retryAfter });
-
 const normalize = (email) => email.trim().toLowerCase();
 const findAccount = (email) => mockAccounts.find((a) => a.email.toLowerCase() === normalize(email));
-
-const SESSION_KEY = 'khameo.mockSession';
-
-function readSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSession(user) {
-  try {
-    if (user) localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    else localStorage.removeItem(SESSION_KEY);
-  } catch {
-    // Storage blocked (private mode etc.): the session just won't survive a reload.
-  }
-  return user;
-}
 
 async function mockGetUser() {
   await wait(300);
@@ -183,7 +150,7 @@ async function mockLogout() {
   writeSession(null);
 }
 
-function sendCode(email,{ cooldown = RESEND_COOLDOWN_SECONDS } = {}) {
+function sendCode(email, { cooldown = RESEND_COOLDOWN_SECONDS } = {}) {
   const now = Date.now();
   verificationByEmail.set(normalize(email), {
     attemptsLeft: MAX_CODE_ATTEMPTS,
@@ -229,6 +196,7 @@ async function mockRegister({ name, email, password, password_confirmation, conf
     name: name.trim(),
     email: normalize(email),
     email_verified_at: null,
+    consent_at: null,
     onboarded_at: null,
     created_at: now,
     updated_at: now,
@@ -272,7 +240,7 @@ async function mockVerifyEmail({ email, code }) {
   const account = findAccount(key);
   if (account) account.user.email_verified_at = verifiedAt;
   // After a reload the account may only exist in the stored session; verify that copy instead.
-  const base = account?.user ?? readSession() ?? { id: 0, name: '', email: key, onboarded_at: null };
+  const base = account?.user ?? readSession() ?? { id: 0, name: '', email: key, consent_at: null, onboarded_at: null };
   const user = writeSession({ ...base, email_verified_at: verifiedAt });
   return { user };
 }
@@ -323,6 +291,6 @@ async function mockResetPassword({ token, email, password, password_confirmation
 
   if (account) account.password = password;
   // Resetting signs the user in on this device.
-  const user = writeSession({ ...(account?.user ?? { id: 0, name: '', email: normalize(email), email_verified_at: null, onboarded_at: null }) });
+  const user = writeSession({ ...(account?.user ?? { id: 0, name: '', email: normalize(email), email_verified_at: null, consent_at: null, onboarded_at: null }) });
   return { user };
 }

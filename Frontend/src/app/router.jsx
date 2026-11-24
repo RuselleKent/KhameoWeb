@@ -11,7 +11,12 @@ import SignupPage from '../features/auth/pages/SignupPage';
 import VerifyEmailPage from '../features/auth/pages/VerifyEmailPage';
 import ForgotPasswordPage from '../features/auth/pages/ForgotPasswordPage';
 import ResetPasswordPage from '../features/auth/pages/ResetPasswordPage';
-import OnboardingPage from '../features/onboarding/pages/OnboardingPage';
+import OnboardingRoot from '../features/onboarding/OnboardingRoot';
+import OnboardingLayout from '../features/onboarding/components/OnboardingLayout';
+import ConsentPage from '../features/onboarding/pages/ConsentPage';
+import ChoosePathPage from '../features/onboarding/pages/ChoosePathPage';
+import NextStepPage from '../features/onboarding/pages/NextStepPage';
+import { PATHS } from '../features/onboarding/paths';
 import HomePage from '../features/home/pages/HomePage';
 
 // Redirect rules: docs/api-auth.md → "Session and redirect rules".
@@ -38,7 +43,25 @@ export const router = createBrowserRouter([
       {
         element: <RequireAuth />,
         children: [
-          { path: 'onboarding', element: <OnboardingPage /> },
+          {
+            path: 'onboarding',
+            element: <OnboardingRoot />,
+            children: [
+              { path: 'consent', element: <ConsentPage /> },
+              {
+                element: <OnboardingLayout />,
+                children: [
+                  { index: true, element: <ChoosePathPage />, handle: { step: 1, totalSteps: 4 } },
+                  // Step 2 of each path; placeholders for now.
+                  ...PATHS.map(({ id }) => ({
+                    path: id,
+                    element: <NextStepPage pathId={id} />,
+                    handle: { step: 2, totalSteps: 4 },
+                  })),
+                ],
+              },
+            ],
+          },
           // Onboarding finished.
           {
             element: <RequireOnboarded />,

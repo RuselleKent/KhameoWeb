@@ -26,6 +26,8 @@ const sizes = {
   lg: 'h-13 px-6 text-base',
   // Full-width form button from the Figma auth screens: 52px tall, 15px label.
   block: 'h-13 w-full px-4 text-[15px]',
+  // Same with the 17px label used on the onboarding steps.
+  blockLg: 'h-13 w-full px-[22px] text-[17px]',
 };
 
 /**

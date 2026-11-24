@@ -4,10 +4,11 @@ import { cn } from '../../lib/utils';
 import FieldError from './FieldError';
 
 // Figma uses a 24px Material checkbox (18px box) next to "Keep me signed in",
-// and a 16px one (12px box) on the Terms line.
+// and a 16px one (12px box) on the Terms line. `soft` is the 20px rounded one on the consent screen.
 const SIZES = {
-  md: { row: 'gap-4 leading-6', slot: 'size-6', box: 'size-[18px]', check: 'size-3.5', errorPad: 'pl-10' },
-  sm: { row: 'gap-2 px-1 py-0.5 leading-[21px]', slot: 'h-[21px] w-4', box: 'size-3', check: 'size-2.5', errorPad: 'pl-7' },
+  md: { row: 'gap-4 text-sm leading-6', slot: 'size-6', box: 'size-[18px] rounded-[3px] border-2', border: 'border-ink', check: 'size-3.5', errorPad: 'pl-10' },
+  sm: { row: 'gap-2 px-1 py-0.5 text-sm leading-[21px]', slot: 'h-[21px] w-4', box: 'size-3 rounded-[3px] border-2', border: 'border-ink', check: 'size-2.5', errorPad: 'pl-7' },
+  soft: { row: 'gap-2.5 text-[13px] leading-5', slot: 'size-5', box: 'size-5 rounded-[6px] border', border: 'border-line', check: 'size-[13px]', errorPad: 'pl-[30px]' },
 };
 
 /**
@@ -23,7 +24,7 @@ export default function Checkbox({ id, size = 'md', error, className, children, 
 
   return (
     <div className={className}>
-      <label htmlFor={inputId} className={cn('flex items-start text-sm text-ink', s.row)}>
+      <label htmlFor={inputId} className={cn('flex items-start text-ink', s.row)}>
         <span className={cn('relative grid shrink-0 place-items-center', s.slot)}>
           <input
             ref={ref}
@@ -32,11 +33,11 @@ export default function Checkbox({ id, size = 'md', error, className, children, 
             aria-invalid={error ? true : undefined}
             aria-describedby={errorId}
             className={cn(
-              'peer cursor-pointer appearance-none rounded-[3px] border-2 bg-white transition-colors',
+              'peer cursor-pointer appearance-none bg-white transition-colors',
               'checked:border-brand checked:bg-brand',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
               'disabled:cursor-not-allowed disabled:opacity-50',
-              error ? 'border-danger' : 'border-ink',
+              error ? 'border-danger' : s.border,
               s.box,
             )}
             {...props}

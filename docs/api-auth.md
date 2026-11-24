@@ -8,6 +8,7 @@ Changes:
 - Rev 2: **verify email** and **resend verification code** (sections 3 and 4).
 - Rev 3: **current user** and **log out** (sections 7 and 8), `onboarded_at` on the user, and the
   **session and redirect rules** the frontend route guards follow.
+- Rev 4: `consent_at` on the user; onboarding endpoints moved to `docs/api-onboarding.md`.
 
 ## Conventions
 
@@ -46,13 +47,15 @@ Every endpoint that returns a user uses this shape:
   "name": "Jane Cruz",
   "email": "jane.cruz@gmail.com",
   "email_verified_at": "2026-11-23T08:04:10.000000Z",
+  "consent_at": "2026-11-23T08:06:00.000000Z",
   "onboarded_at": "2026-11-23T08:10:00.000000Z",
   "created_at": "2026-11-23T08:00:00.000000Z",
   "updated_at": "2026-11-23T08:10:00.000000Z"
 }
 ```
 `email_verified_at` and `onboarded_at` are `null` until those steps are done; the route guards
-depend on both (see "Session and redirect rules").
+depend on both (see "Session and redirect rules"). `consent_at` is `null` unless the user has agreed to
+the recording & AI terms (see `docs/api-onboarding.md`); it can stay `null` after onboarding.
 
 Note on 3 and 4: after `register` the user is signed in, so these could take the email from the
 session. The frontend sends `email` anyway so the page also works after a reload or on another
@@ -83,6 +86,7 @@ Rules: `name` required; `email` required, valid, unique; `password` min 8, confi
 ```json
 {
   "user": { "id": 3, "name": "Jane Cruz", "email": "jane.cruz@gmail.com", "email_verified_at": null,
+            "consent_at": null, "onboarded_at": null,
             "created_at": "2026-11-23T08:00:00.000000Z", "updated_at": "2026-11-23T08:00:00.000000Z" },
   "verification": { "expires_in": 600, "resend_in": 60 }
 }
@@ -240,14 +244,14 @@ Implemented in `Frontend/src/app/` (`AuthProvider`, `RedirectIfAuthenticated`, `
 | Route group | Routes | Signed out | Signed in |
 |---|---|---|---|
 | Public | `/`, `/welcome`, `/login`, `/signup`, `/verify-email`, `/forgot-password`, `/reset-password` | show the page | go to the next step; `/verify-email` itself stays open for unverified users. After logging in, a user sent to `/login` from a protected page goes back to that page. |
-| Signed in | `/onboarding` | → `/login` | unverified → `/verify-email`; already onboarded → `/home` |
+| Signed in | `/onboarding` and the steps under it (see `docs/api-onboarding.md`) | → `/login` | unverified → `/verify-email`; already onboarded → `/home` |
 | Signed in + onboarded | `/home` (and future app pages) | → `/login` (remembers the page) | unverified → `/verify-email`; not onboarded → `/onboarding` |
 
 What this means for the backend:
 - `register` signs the user in (unverified) so `/verify-email` works right after sign-up.
 - `login` succeeds for unverified users too; the frontend sends them to `/verify-email`.
 - `reset-password` signs the user in on this device.
-- Something must set `onboarded_at` when onboarding finishes (endpoint to be defined with the onboarding screens).
+- `PATCH /api/user/onboarding` sets `onboarded_at` when onboarding finishes (`docs/api-onboarding.md`).
 
 ---
 

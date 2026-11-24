@@ -1,13 +1,11 @@
-// Mock users for the auth screens.
-// TODO: docs/api-auth.md is still empty. These fields come from the Laravel
-// users table (Backend/database/migrations) as returned by GET /api/user.
-// Update to the exact contract shape once api-auth.md is agreed with Russel.
+// Mock users. Field names follow "The user object" in docs/api-auth.md.
 
 export const mockUser = {
   id: 1,
   name: 'Jane Cruz',
   email: 'jane.cruz@gmail.com',
   email_verified_at: '2026-11-20T08:00:00.000000Z',
+  consent_at: '2026-11-20T08:06:00.000000Z',
   onboarded_at: '2026-11-20T08:10:00.000000Z',
   created_at: '2026-11-20T08:00:00.000000Z',
   updated_at: '2026-11-20T08:00:00.000000Z',
@@ -19,6 +17,7 @@ const mockCoach = {
   name: 'Juan Dela Cruz',
   email: 'juan.delacruz@example.com',
   email_verified_at: '2026-11-21T09:30:00.000000Z',
+  consent_at: null,
   onboarded_at: null,
   created_at: '2026-11-21T09:30:00.000000Z',
   updated_at: '2026-11-21T09:30:00.000000Z',

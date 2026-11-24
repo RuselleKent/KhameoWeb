@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Clock, Star, Users } from 'lucide-react';
-import logoMark from '../../../assets/logo-mark.png';
+import Logo from '../../../components/layout/Logo';
 import stageImage from '../../../assets/auth-brand-stage.jpg';
 import { cn } from '../../../lib/utils';
 
@@ -23,12 +23,11 @@ function LogoLink({ light = false, className }) {
     <Link
       to="/"
       className={cn(
-        'flex w-fit items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent',
+        'block w-fit rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent',
         className,
       )}
     >
-      <img src={logoMark} alt="" width="40" height="40" className="size-10" />
-      <span className={cn('text-[22px] font-bold', light ? 'text-white' : 'text-brand')}>Khameo</span>
+      <Logo light={light} />
     </Link>
   );
 }
