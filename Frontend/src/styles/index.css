@@ -1,0 +1,47 @@
+@import url("https://fonts.googleapis.com/css2?family=Cal+Sans&family=Geist:wght@100..900&display=swap");
+@import "tailwindcss";
+
+@theme {
+  /* Colors */
+  --color-brand: #285755;
+  --color-brand-dark: #154A42;
+  --color-accent: #FD8B47;
+  --color-ink: #1A2320;
+  --color-muted: #59625E;
+  --color-canvas: #F6F5F2;
+
+  /* Borders and lines (from the Figma auth screens) */
+  --color-line: #CFC9BC;         /* outline buttons */
+  --color-field: #D9D3C7;        /* empty input border */
+  --color-field-filled: #105555; /* input border once it has a value */
+  --color-divider: #E7E2D9;      /* "or" divider, empty strength-meter bars */
+
+  /* Brand panel (auth screens) */
+  --color-panel: #032424;        /* dark teal base */
+  --color-mint: #2DBDA8;         /* "They adapt." highlight */
+  --color-mint-light: #54D2C0;   /* panel edge stripe */
+
+  /* Feedback */
+  --color-danger: #B5061A;       /* error text and "!" badge */
+  --color-danger-line: #E41105;  /* border of a field with an error */
+  --color-success: #1E7B45;      /* border of a field confirmed valid, strong password */
+  --color-success-soft: #E3F4EA; /* background of success check badges */
+  --color-brand-disabled: #BFD2D1; /* disabled primary button */
+
+  /* Fonts: font-display for headings, font-sans (default) for body */
+  --font-display: "Cal Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+
+  /* Card radius (16–18px per design system) */
+  --radius-card: 18px;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+}
