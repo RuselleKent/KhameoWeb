@@ -23,8 +23,44 @@ import TwoFactorPage from '../features/onboarding/pages/TwoFactorPage';
 import GoalsPage from '../features/onboarding/pages/personal/GoalsPage';
 import ProfilePage from '../features/onboarding/pages/personal/ProfilePage';
 import ReadyPage from '../features/onboarding/pages/personal/ReadyPage';
-import { PATHS } from '../features/onboarding/paths';
+import MemberInvitePage from '../features/onboarding/pages/member/InvitePage';
+import MemberProfilePage from '../features/onboarding/pages/member/ProfilePage';
+import MemberReadyPage from '../features/onboarding/pages/member/ReadyPage';
+import CoachInvitePage from '../features/onboarding/pages/coach/InvitePage';
+import CoachProfilePage from '../features/onboarding/pages/coach/ProfilePage';
+import CoachReadyPage from '../features/onboarding/pages/coach/ReadyPage';
 import HomePage from '../features/home/pages/HomePage';
+
+// The member and coach paths have the same steps: invite code, profile, ready, tour.
+function invitePathRoutes(pathId, invitePage, profilePage, readyPage) {
+  return {
+    path: pathId,
+    element: <RequirePath pathId={pathId} />,
+    children: [
+      {
+        index: true,
+        element: invitePage,
+        handle: {
+          step: 2,
+          totalSteps: 4,
+          // Same as "Not yet".
+          skip: {
+            to: '/onboarding/personal/profile',
+            clear: { path: 'personal', startedAs: pathId },
+            hidden: (answers) => Boolean(answers.joined[pathId]),
+          },
+        },
+      },
+      { path: 'profile', element: profilePage, handle: { step: 3, totalSteps: 4 } },
+      { path: 'ready', element: readyPage, handle: { step: 4, totalSteps: 4, wide: true, afterOnboarding: true } },
+      {
+        path: 'tour',
+        element: <TourPage readyTo={`/onboarding/${pathId}/ready`} />,
+        handle: { step: 4, totalSteps: 4, afterOnboarding: true },
+      },
+    ],
+  };
+}
 
 // Redirect rules: docs/api-auth.md → "Session and redirect rules".
 export const router = createBrowserRouter([
@@ -88,17 +124,14 @@ export const router = createBrowserRouter([
                       },
                     ],
                   },
-                  // Step 2 of the other paths; placeholders for now.
-                  ...PATHS.filter(({ id }) => id !== 'personal').map(({ id }) => ({
-                    path: id,
-                    element: (
-                      <NextStepPage
-                        pathId={id}
-                        continueTo={id === 'host' ? '/onboarding/host/two-factor' : undefined}
-                      />
-                    ),
+                  invitePathRoutes('member', <MemberInvitePage />, <MemberProfilePage />, <MemberReadyPage />),
+                  invitePathRoutes('coach', <CoachInvitePage />, <CoachProfilePage />, <CoachReadyPage />),
+                  // Step 2 of the host path; placeholder for now.
+                  {
+                    path: 'host',
+                    element: <NextStepPage pathId="host" continueTo="/onboarding/host/two-factor" />,
                     handle: { step: 2, totalSteps: 4 },
-                  })),
+                  },
                   // H3, after two-factor; placeholder for now.
                   {
                     path: 'host/role-proof',

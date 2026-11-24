@@ -74,7 +74,7 @@ export async function completeOnboarding({ path, goals, profile }) {
   return data;
 }
 
-/** GET /api/invites/{code} → { code, type: 'group' | 'coach', role, group, invited_by }. 404: no such code. */
+/** GET /api/invites/{code} → { code, type: 'group' | 'coach', role, group, … }. 404: no such code. */
 export async function getInvite(code) {
   if (USE_MOCK) return mockGetInvite(code);
 
@@ -82,7 +82,7 @@ export async function getInvite(code) {
   return data;
 }
 
-/** POST /api/groups/join → membership. 404: no such code; 409: already in the group. */
+/** POST /api/groups/join → membership. 404: no such code; 409 code 'already_member' with their membership. */
 export async function joinGroup({ code }) {
   if (USE_MOCK) return mockJoinGroup({ code });
 
@@ -130,7 +130,7 @@ export async function applyToHost({ school_email, school_code, role_proof }) {
 }
 
 // ---- Mock --------------------------------------------------------------------
-// Invite codes: SPEAK-2026 (group member), COACH-2026 (coach). Anything else is a 404.
+// Invite codes: ACLC-4A (group member), COACH-RINA (coach). Anything else is a 404.
 // Two-factor codes: see mockdata/mockCodes.js (123456 is correct).
 // Uploaded photos are resized and kept in the mock session. Memberships, host applications and codes
 // live in memory until a reload.
@@ -143,8 +143,8 @@ const memberships = [];
 const pendingApplicants = new Set(); // user emails (mock ids can repeat after a reload)
 
 function findInvite(code) {
-  const wanted = (code ?? '').trim().toUpperCase();
-  const invite = mockInvites.find((i) => i.code === wanted);
+  const normalize = (value) => (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const invite = mockInvites.find((i) => normalize(i.code) === normalize(code));
   if (!invite) throw apiError(404, { message: 'We couldn’t find that invite code.' });
   return invite;
 }
@@ -265,18 +265,23 @@ async function mockJoinGroup({ code }) {
   const user = requireSession();
   if (!code?.trim()) throw validationError('The given data was invalid.', { code: ['Enter your invite code.'] });
   const { group, role } = findInvite(code);
-  if (memberships.some((m) => m.email === user.email && m.group.id === group.id)) {
-    throw apiError(409, { message: 'You’re already in this group.', code: 'already_member' });
+  const existing = memberships.find((m) => m.email === user.email && m.membership.group.id === group.id);
+  if (existing) {
+    throw apiError(409, {
+      message: 'You’re already in this group.',
+      code: 'already_member',
+      membership: existing.membership,
+    });
   }
 
   const membership = {
     id: memberships.length + 1,
-    group: { id: group.id, name: group.name },
+    group: { id: group.id, name: group.name, unit: group.unit },
     user_id: user.id,
     role,
     joined_at: new Date().toISOString(),
   };
-  memberships.push({ ...membership, email: user.email });
+  memberships.push({ email: user.email, membership });
   return membership;
 }
 

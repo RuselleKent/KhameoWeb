@@ -13,19 +13,34 @@ export const ONBOARDING_GOALS = [
   'stay_on_time',
 ];
 
+const speechCenter = {
+  id: 1,
+  name: 'ACLC Speech Center',
+  unit: 'BSIT 4-A',
+  visibility: 'private',
+  members_count: 28,
+  description: 'Speech practice and graded talks for BSIT 4-A.',
+  cover_url: null,
+};
+const primaryHost = { id: 10, name: 'Maria Santos' };
+
 export const mockInvites = [
   {
-    code: 'SPEAK-2026',
+    code: 'ACLC-4A',
     type: 'group',
     role: 'member',
-    group: { id: 1, name: 'BSCS 4A Public Speaking', members_count: 24 },
-    invited_by: { id: 10, name: 'Maria Santos' },
+    group: speechCenter,
+    invited_by: primaryHost,
+    next_event: { title: 'Storytelling Night', starts_at: '2026-12-04T11:30:00.000000Z' },
+    pending_reviews_count: null,
   },
   {
-    code: 'COACH-2026',
+    code: 'COACH-RINA',
     type: 'coach',
     role: 'coach',
-    group: { id: 1, name: 'BSCS 4A Public Speaking', members_count: 24 },
-    invited_by: { id: 10, name: 'Maria Santos' },
+    group: speechCenter,
+    invited_by: primaryHost,
+    next_event: null,
+    pending_reviews_count: 7,
   },
 ];

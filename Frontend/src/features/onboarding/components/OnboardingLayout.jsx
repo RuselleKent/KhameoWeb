@@ -10,7 +10,8 @@ import StepProgress from './StepProgress';
  * Each step route describes itself with a `handle` (see router.jsx):
  * - step, totalSteps  progress in the header
  * - wide              760px column (Ready)
- * - skip              { to, clear }: Skip link; `clear` resets the answers of the skipped step
+ * - skip              { to, clear, hidden }: Skip link; `clear` changes the answers of the skipped step,
+ *                     `hidden(answers)` may hide it
  * The consent screen comes first, so steps redirect there until it is answered.
  */
 export default function OnboardingLayout() {
@@ -29,7 +30,7 @@ export default function OnboardingLayout() {
         <Logo />
         {handle && (
           <StepProgress step={handle.step} total={handle.totalSteps}>
-            {handle.skip && (
+            {handle.skip && !handle.skip.hidden?.(answers) && (
               <Link
                 to={handle.skip.to}
                 onClick={() => updateAnswers(handle.skip.clear)}

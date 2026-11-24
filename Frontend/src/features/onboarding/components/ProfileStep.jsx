@@ -10,11 +10,11 @@ import StepHeading from './StepHeading';
 
 /**
  * "Set up your profile", shared by every path.
- * - `pathId` sets the pill; `backTo` and `nextTo` are the routes around this step
+ * - `pathId` sets the pill (or pass `label`); `backTo` and `nextTo` are the routes around this step
  * The answers stay in OnboardingProvider; ReadyStep sends them. If it gets errors back it returns here
  * with them in the location state: { errors: { username: '…' } }.
  */
-export default function ProfileStep({ pathId, backTo, nextTo }) {
+export default function ProfileStep({ pathId, label, backTo, nextTo }) {
   const navigate = useNavigate();
   const location = useLocation();
   const id = useId();
@@ -62,6 +62,7 @@ export default function ProfileStep({ pathId, backTo, nextTo }) {
 
       <StepHeading
         pathId={pathId}
+        label={label}
         title="Set up your profile"
         description="This is how you appear in groups and lobbies. It also pre-fills your practice sessions."
       />

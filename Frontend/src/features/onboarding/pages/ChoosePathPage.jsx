@@ -39,7 +39,7 @@ export default function ChoosePathPage() {
             description={path.description}
             next={path.next}
             checked={path.id === answers.path}
-            onChange={() => updateAnswers({ path: path.id })}
+            onChange={() => updateAnswers({ path: path.id, startedAs: null })}
           />
         ))}
       </div>

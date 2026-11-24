@@ -6,6 +6,10 @@ import { OnboardingContext } from './onboardingContext';
 const EMPTY_ANSWERS = {
   consentSkipped: false, // picked "Not now" on the consent screen
   path: null,
+  // The path they began on before "Not yet" switched them to personal ('member' | 'coach'), so Back still works.
+  startedAs: null,
+  // Groups joined in this onboarding, per path: { member: { invite, membership } }. Already saved by the API.
+  joined: {},
   goals: [],
   // The photo is uploaded on its own (uploadAvatar), so it isn't kept here.
   profile: { display_name: '', username: '', bio: '', occupation: '' },

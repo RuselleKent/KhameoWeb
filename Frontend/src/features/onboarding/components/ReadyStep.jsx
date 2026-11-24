@@ -4,19 +4,34 @@ import Alert from '../../../components/ui/Alert';
 import Button from '../../../components/ui/Button';
 import { useAuth } from '../../../hooks/useAuth';
 import { getFieldErrors } from '../../../lib/apiErrors';
+import { cn } from '../../../lib/utils';
 import { completeOnboarding } from '../onboarding.api';
 import { isProfileComplete } from '../profileRules';
 import { useOnboarding } from '../useOnboarding';
 
 const PROFILE_PREFIX = 'profile.';
 
+const BADGES = {
+  star: { glyph: '★', className: 'bg-accent-soft text-accent' },
+  check: { glyph: '✓', className: 'bg-success-soft text-success' },
+};
+
 /**
  * Last step of every path. Any choice saves onboarding first, then opens `nextTo`.
- * - `description` and `cards` ([{ title, description }]) differ per path
+ * - `title` (a function of the first name), `description`, `badge` ('star' | 'check') and `cards`
+ *   ([{ title, description }]) differ per path
  * - `profileTo` is that path's profile step, for when the API rejects something there
  * Saving sets onboarded_at; this route and the tour stay open after that (`afterOnboarding` in router.jsx).
  */
-export default function ReadyStep({ pathId, description, cards, profileTo, nextTo }) {
+export default function ReadyStep({
+  pathId,
+  title = (firstName) => (firstName ? `You’re ready, ${firstName}` : 'You’re ready'),
+  description,
+  badge = 'star',
+  cards,
+  profileTo,
+  nextTo,
+}) {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
   const { answers } = useOnboarding();
@@ -39,7 +54,8 @@ export default function ReadyStep({ pathId, description, cards, profileTo, nextT
     try {
       const saved = await completeOnboarding({
         path: pathId,
-        goals: answers.goals,
+        // Only the personal path asks for goals.
+        goals: pathId === 'personal' ? answers.goals : [],
         profile: {
           display_name: profile.display_name.trim(),
           username: profile.username,
@@ -73,12 +89,15 @@ export default function ReadyStep({ pathId, description, cards, profileTo, nextT
 
       <span
         aria-hidden="true"
-        className="grid size-[72px] place-items-center rounded-full bg-accent-soft text-[30px] leading-none text-accent"
+        className={cn(
+          'grid size-[72px] place-items-center rounded-full text-[30px] leading-none',
+          BADGES[badge].className,
+        )}
       >
-        ★
+        {BADGES[badge].glyph}
       </span>
       <h1 className="text-[28px] leading-tight break-words text-ink sm:text-[36px]">
-        You’re ready{firstName ? `, ${firstName}` : ''}
+        {title(firstName)}
       </h1>
       <p className="text-[15px] leading-5 text-muted">{description}</p>
 
