@@ -1,9 +1,10 @@
 import { useId, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Input from '../../../components/ui/Input';
-import { MAX_BIO, MAX_DISPLAY_NAME, MAX_OCCUPATION, MAX_USERNAME, MESSAGES } from '../profileRules';
+import { MAX_BIO, MAX_DISPLAY_NAME, MAX_USERNAME, MESSAGES } from '../profileRules';
 import { useOnboarding } from '../useOnboarding';
 import { useUsernameCheck } from '../useUsernameCheck';
+import OccupationField from './OccupationField';
 import ProfilePhoto from './ProfilePhoto';
 import StepActions from './StepActions';
 import StepHeading from './StepHeading';
@@ -123,18 +124,11 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
         error={serverErrors.bio}
       />
 
-      <div className="rounded-xl border border-field bg-[#FAF9F6] p-5">
-        <Input
-          label="Occupation (optional)"
-          placeholder="Student"
-          autoComplete="organization-title"
-          maxLength={MAX_OCCUPATION}
-          value={profile.occupation}
-          onChange={(e) => setField('occupation', e.target.value)}
-          error={serverErrors.occupation}
-          hint="Tells Khameo who you speak as, so feedback fits your goals."
-        />
-      </div>
+      <OccupationField
+        value={profile.occupation}
+        onChange={(value) => setField('occupation', value)}
+        error={serverErrors.occupation}
+      />
 
       <p className="text-[13.5px] leading-[18px] text-muted">You can change these in Settings.</p>
 

@@ -7,7 +7,6 @@ import PasswordInput from '../../../components/ui/PasswordInput';
 import { cn } from '../../../lib/utils';
 import AuthLayout from '../components/AuthLayout';
 import AuthSuccess from '../components/AuthSuccess';
-import { useAuth } from '../../../hooks/useAuth';
 import { getFieldErrors, resetPassword } from '../auth.api';
 import { MIN_PASSWORD_LENGTH, getPasswordStrength } from '../passwordStrength';
 
@@ -63,9 +62,8 @@ export default function ResetPasswordPage() {
   // null | 'linkExpired' | 'generic'
   const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  // The signed-in user returned by the reset; set means "Password updated" is showing.
-  const [resetUser, setResetUser] = useState(null);
-  const { setUser } = useAuth();
+  // "Password updated" is showing.
+  const [updated, setUpdated] = useState(false);
 
   const requirements = requirementsFor(password);
   const strength = getPasswordStrength(password);
@@ -82,8 +80,8 @@ export default function ResetPasswordPage() {
     setNotice(null);
     setServerErrors({});
     try {
-      const { user } = await resetPassword({ token, email, password, password_confirmation: confirm });
-      setResetUser(user);
+      await resetPassword({ token, email, password, password_confirmation: confirm });
+      setUpdated(true);
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
       if (fieldErrors.token) setNotice('linkExpired');
@@ -95,14 +93,13 @@ export default function ResetPasswordPage() {
     }
   }
 
-  if (resetUser) {
+  if (updated) {
     return (
       <AuthLayout>
         <title>Password updated · Khameo</title>
-        <AuthSuccess title="Password updated" description="Your password is updated. You’re signed in on this device.">
-          {/* Storing the user lets the route guard take them to /home (or an unfinished step). */}
-          <Button size="block" onClick={() => setUser(resetUser)}>
-            Go to my dashboard
+        <AuthSuccess title="Password updated" description="Log in with your new password.">
+          <Button to="/login" state={{ email }} size="block">
+            Go to log in
           </Button>
           <p className="text-sm text-muted">
             Didn’t do this?{' '}

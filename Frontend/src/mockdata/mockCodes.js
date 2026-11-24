@@ -1,4 +1,4 @@
-// Emailed 6-digit codes for the mock APIs (verify email, two-factor, two-factor log in).
+// Emailed 6-digit codes for the mock APIs (verify email, two-factor, two-factor log in, school email).
 //   123456 is correct; 000000 acts as an expired code; 3 wrong tries locks it
 //   codes expire after 10 minutes; a new one can be sent 60 seconds after the last
 import { rateLimitError, validationError } from './mockServer';

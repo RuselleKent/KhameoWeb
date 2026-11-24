@@ -13,7 +13,7 @@ export default function ReadyPage() {
       description="Your practice space is set. Where to first?"
       cards={CARDS}
       profileTo="/onboarding/personal/profile"
-      nextTo="/onboarding/personal/tour"
+      tourTo="/onboarding/personal/tour"
     />
   );
 }

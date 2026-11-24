@@ -28,7 +28,7 @@ function SessionError({ onRetry }) {
  * Context value: { user, login, loginTwoFactor, register, logout, setUser }
  * - login / loginTwoFactor / register call the API and store the returned user
  * - login may instead return { two_factor_required: true }: nobody is signed in until loginTwoFactor
- * - setUser(user) stores a user a page already got from the API (verify email, reset password)
+ * - setUser(user) stores a user a page already got from the API (verify email, consent, two-factor…)
  */
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);

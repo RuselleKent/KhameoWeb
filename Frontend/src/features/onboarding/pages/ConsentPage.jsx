@@ -105,7 +105,7 @@ export default function ConsentPage() {
           disabled={saving || alreadyAgreed}
           onChange={(e) => setUnderstood(e.target.checked)}
         >
-          I understand how my recordings are used and I agree.
+          I understand how my recordings are used, including for the KHAMEO thesis study, and I agree.
         </Checkbox>
 
         {failed && (

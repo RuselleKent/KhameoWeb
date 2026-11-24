@@ -12,11 +12,12 @@ import SignupPage from '../features/auth/pages/SignupPage';
 import VerifyEmailPage from '../features/auth/pages/VerifyEmailPage';
 import ForgotPasswordPage from '../features/auth/pages/ForgotPasswordPage';
 import ResetPasswordPage from '../features/auth/pages/ResetPasswordPage';
+import HostApplicationRoot from '../features/onboarding/HostApplicationRoot';
 import OnboardingRoot from '../features/onboarding/OnboardingRoot';
 import OnboardingLayout from '../features/onboarding/components/OnboardingLayout';
 import ConsentPage from '../features/onboarding/pages/ConsentPage';
 import ChoosePathPage from '../features/onboarding/pages/ChoosePathPage';
-import NextStepPage from '../features/onboarding/pages/NextStepPage';
+import RequireNotSubmitted from '../features/onboarding/components/RequireNotSubmitted';
 import RequirePath from '../features/onboarding/components/RequirePath';
 import TourPage from '../features/onboarding/pages/TourPage';
 import TwoFactorPage from '../features/onboarding/pages/TwoFactorPage';
@@ -29,6 +30,14 @@ import MemberReadyPage from '../features/onboarding/pages/member/ReadyPage';
 import CoachInvitePage from '../features/onboarding/pages/coach/InvitePage';
 import CoachProfilePage from '../features/onboarding/pages/coach/ProfilePage';
 import CoachReadyPage from '../features/onboarding/pages/coach/ReadyPage';
+import HostTypePage from '../features/onboarding/pages/host/HostTypePage';
+import SchoolEmailPage from '../features/onboarding/pages/host/SchoolEmailPage';
+import RoleProofPage from '../features/onboarding/pages/host/RoleProofPage';
+import CommunityProofPage from '../features/onboarding/pages/host/CommunityProofPage';
+import HostStatusPage from '../features/onboarding/pages/host/HostStatusPage';
+import HostSubmittedPage from '../features/onboarding/pages/host/SubmittedPage';
+import HostProfilePage from '../features/onboarding/pages/host/ProfilePage';
+import HostReadyPage from '../features/onboarding/pages/host/ReadyPage';
 import HomePage from '../features/home/pages/HomePage';
 
 // The member and coach paths have the same steps: invite code, profile, ready, tour.
@@ -126,24 +135,37 @@ export const router = createBrowserRouter([
                   },
                   invitePathRoutes('member', <MemberInvitePage />, <MemberProfilePage />, <MemberReadyPage />),
                   invitePathRoutes('coach', <CoachInvitePage />, <CoachProfilePage />, <CoachReadyPage />),
-                  // Step 2 of the host path; placeholder for now.
                   {
                     path: 'host',
-                    element: <NextStepPage pathId="host" continueTo="/onboarding/host/two-factor" />,
-                    handle: { step: 2, totalSteps: 4 },
-                  },
-                  // H3, after two-factor; placeholder for now.
-                  {
-                    path: 'host/role-proof',
-                    element: (
-                      <NextStepPage
-                        pathId="host"
-                        title="Role proof"
-                        backTo="/onboarding/host/two-factor"
-                        requireTwoFactor
-                      />
-                    ),
-                    handle: { step: 3, totalSteps: 4 },
+                    element: <RequirePath pathId="host" />,
+                    children: [
+                      {
+                        element: <RequireNotSubmitted />,
+                        children: [
+                          { index: true, element: <HostTypePage />, handle: { step: 2, totalSteps: 4 } },
+                          { path: 'school-email', element: <SchoolEmailPage />, handle: { step: 2, totalSteps: 4 } },
+                          // host/two-factor (above) comes between these.
+                          { path: 'role-proof', element: <RoleProofPage />, handle: { step: 2, totalSteps: 4 } },
+                          {
+                            path: 'community-proof',
+                            element: <CommunityProofPage />,
+                            handle: { step: 2, totalSteps: 4 },
+                          },
+                        ],
+                      },
+                      { path: 'submitted', element: <HostSubmittedPage />, handle: { step: 2, totalSteps: 4 } },
+                      { path: 'profile', element: <HostProfilePage />, handle: { step: 3, totalSteps: 4 } },
+                      {
+                        path: 'ready',
+                        element: <HostReadyPage />,
+                        handle: { step: 4, totalSteps: 4, wide: true, afterOnboarding: true },
+                      },
+                      {
+                        path: 'tour',
+                        element: <TourPage readyTo="/onboarding/host/ready" />,
+                        handle: { step: 4, totalSteps: 4, afterOnboarding: true },
+                      },
+                    ],
                   },
                 ],
               },
@@ -152,7 +174,32 @@ export const router = createBrowserRouter([
           // Onboarding finished.
           {
             element: <RequireOnboarded />,
-            children: [{ path: 'home', element: <HomePage /> }],
+            children: [
+              { path: 'home', element: <HomePage /> },
+              // Apply (or reapply) as a Host later; the same pages as in onboarding.
+              {
+                element: <HostApplicationRoot />,
+                children: [
+                  { path: 'host-application/two-factor', element: <TwoFactorPage /> },
+                  {
+                    element: <OnboardingLayout />,
+                    children: [
+                      { path: 'host-status', element: <HostStatusPage /> },
+                      {
+                        path: 'host-application',
+                        element: <RequireNotSubmitted />,
+                        children: [
+                          { index: true, element: <HostTypePage /> },
+                          { path: 'school-email', element: <SchoolEmailPage /> },
+                          { path: 'role-proof', element: <RoleProofPage /> },
+                          { path: 'community-proof', element: <CommunityProofPage /> },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
           },
         ],
       },

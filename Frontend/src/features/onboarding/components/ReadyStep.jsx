@@ -17,9 +17,10 @@ const BADGES = {
 };
 
 /**
- * Last step of every path. Any choice saves onboarding first, then opens `nextTo`.
+ * Last step of every path. Any choice saves onboarding first, then goes where it says: the dashboard button
+ * to /home, the tour link to `tourTo`, a card to its `to` (/home until its page exists).
  * - `title` (a function of the first name), `description`, `badge` ('star' | 'check') and `cards`
- *   ([{ title, description }]) differ per path
+ *   ([{ title, description, to }]) differ per path
  * - `profileTo` is that path's profile step, for when the API rejects something there
  * Saving sets onboarded_at; this route and the tour stay open after that (`afterOnboarding` in router.jsx).
  */
@@ -30,7 +31,7 @@ export default function ReadyStep({
   badge = 'star',
   cards,
   profileTo,
-  nextTo,
+  tourTo,
 }) {
   const navigate = useNavigate();
   const { user, setUser } = useAuth();
@@ -41,11 +42,11 @@ export default function ReadyStep({
 
   if (!user.onboarded_at && !isProfileComplete(profile)) return <Navigate to={profileTo} replace />;
 
-  async function handleChoice() {
+  async function handleChoice(to) {
     if (saving) return;
     // Came back here after saving (browser Back).
     if (user.onboarded_at) {
-      navigate(nextTo);
+      navigate(to);
       return;
     }
 
@@ -64,7 +65,7 @@ export default function ReadyStep({
         },
       });
       setUser(saved);
-      navigate(nextTo);
+      navigate(to);
     } catch (error) {
       // 'profile.username' → 'username', e.g. when someone took it since the check.
       const profileErrors = Object.fromEntries(
@@ -107,7 +108,7 @@ export default function ReadyStep({
             key={card.title}
             type="button"
             disabled={saving}
-            onClick={handleChoice}
+            onClick={() => handleChoice(card.to ?? '/home')}
             className="flex flex-col gap-1.5 rounded-[14px] border border-field bg-white p-[18px] text-left transition-colors hover:border-brand/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
           >
             <span className="text-[15px] leading-5 font-semibold text-ink">{card.title}</span>{' '}
@@ -122,10 +123,10 @@ export default function ReadyStep({
         </Alert>
       )}
 
-      <Button size="blockLg" loading={saving} loadingText="Saving…" onClick={handleChoice}>
+      <Button size="blockLg" loading={saving} loadingText="Saving…" onClick={() => handleChoice('/home')}>
         Go to my dashboard
       </Button>
-      <Button variant="ghostBrand" size="text" disabled={saving} onClick={handleChoice}>
+      <Button variant="ghostBrand" size="text" disabled={saving} onClick={() => handleChoice(tourTo)}>
         Take the one-minute tour
       </Button>
       <p className="text-[13px] leading-[17px] text-muted">You can replay the tour any time from Settings.</p>

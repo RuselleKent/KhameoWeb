@@ -1,9 +1,16 @@
 import api, { getCsrfCookie } from '../../lib/api';
 import { createMockCodes } from '../../mockdata/mockCodes';
 import { apiError, requireSession, updateSessionUser, validationError, wait } from '../../mockdata/mockServer';
-import { CONSENT_VERSION, mockInvites, ONBOARDING_GOALS, ONBOARDING_PATHS } from '../../mockdata/onboarding';
+import {
+  CONSENT_VERSION,
+  mockHostApplications,
+  mockInvites,
+  ONBOARDING_GOALS,
+  ONBOARDING_PATHS,
+} from '../../mockdata/onboarding';
 import { mockAccounts } from '../../mockdata/user';
 import { MAX_GOALS } from './goals';
+import { HOST_MESSAGES, isValidProof, isValidProofLink, schoolEmailError } from './hostRules';
 import {
   AVATAR_TYPES,
   MAX_AVATAR_BYTES,
@@ -82,12 +89,15 @@ export async function getInvite(code) {
   return data;
 }
 
-/** POST /api/groups/join → membership. 404: no such code; 409 code 'already_member' with their membership. */
-export async function joinGroup({ code }) {
-  if (USE_MOCK) return mockJoinGroup({ code });
+/**
+ * POST /api/groups/join → membership. 404: no such code; 409 code 'already_member' with their membership.
+ * `upgrade: true` lets a coach code turn a Member into a Coach (ask the user first).
+ */
+export async function joinGroup({ code, upgrade = false }) {
+  if (USE_MOCK) return mockJoinGroup({ code, upgrade });
 
   await getCsrfCookie();
-  const { data } = await api.post('/api/groups/join', { code });
+  const { data } = await api.post('/api/groups/join', upgrade ? { code, upgrade } : { code });
   return data;
 }
 
@@ -113,38 +123,69 @@ export async function confirmTwoFactor({ code }) {
 }
 
 /**
- * POST /api/host-applications (multipart) → { status: 'pending' }. `role_proof` is a File.
- * 403 code: 'two_factor_required' when two-factor isn't confirmed.
+ * POST /api/host-applications/school-email/send → { expires_in, resend_in }. Emails a code to the school address.
+ * 422: errors.school_email. 429: retry_after (seconds).
  */
-export async function applyToHost({ school_email, school_code, role_proof }) {
-  if (USE_MOCK) return mockApplyToHost({ school_email, school_code, role_proof });
+export async function sendSchoolEmailCode({ school_email }) {
+  if (USE_MOCK) return mockSendSchoolEmailCode({ school_email });
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/host-applications/school-email/send', { school_email });
+  return data;
+}
+
+/**
+ * POST /api/host-applications/school-email/verify → { school_email, verified }
+ * 422 code: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
+ */
+export async function verifySchoolEmail({ school_email, code }) {
+  if (USE_MOCK) return mockVerifySchoolEmail({ school_email, code });
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/host-applications/school-email/verify', { school_email, code });
+  return data;
+}
+
+/**
+ * POST /api/host-applications (multipart) → { status: 'pending' }.
+ * application: { host_type: 'school', school_email, school_code, institution, role_title, role_proof }
+ *           or { host_type: 'community', organization_name, proof_link and/or proof_file }
+ * (role_proof and proof_file are Files.) 403 code: 'two_factor_required'.
+ * 409 code: 'already_pending' | 'already_verified'.
+ */
+export async function applyToHost(application) {
+  if (USE_MOCK) return mockApplyToHost(application);
 
   await getCsrfCookie();
   const form = new FormData();
-  form.append('school_email', school_email);
-  form.append('school_code', school_code);
-  form.append('role_proof', role_proof);
+  Object.entries(application).forEach(([field, value]) => form.append(field, value));
   // axios sets the multipart header (with its boundary) from the FormData.
   const { data } = await api.post('/api/host-applications', form);
   return data;
 }
 
+/** GET /api/host-applications/latest → { status, submitted_at, rejection_reason }. status 'none': never applied. */
+export async function getLatestHostApplication() {
+  if (USE_MOCK) return mockGetLatestHostApplication();
+
+  const { data } = await api.get('/api/host-applications/latest');
+  return data;
+}
+
 // ---- Mock --------------------------------------------------------------------
 // Invite codes: ACLC-4A (group member), COACH-RINA (coach). Anything else is a 404.
-// Two-factor codes: see mockdata/mockCodes.js (123456 is correct).
-// Uploaded photos are resized and kept in the mock session. Memberships, host applications and codes
-// live in memory until a reload.
-
-const MAX_PROOF_BYTES = 5 * 1024 * 1024;
-const PROOF_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+// Two-factor and school email codes: see mockdata/mockCodes.js (123456 is correct).
+// Uploaded photos (resized) and host_status are kept in the mock session. Memberships, application details
+// and codes live in memory until a reload. Nobody approves applications in the mock: log in as
+// maria.santos@example.com (verified) or paolo.reyes@example.com (rejected) to see those.
 
 const twoFactorCodes = createMockCodes();
+const schoolEmailCodes = createMockCodes();
 const memberships = [];
-const pendingApplicants = new Set(); // user emails (mock ids can repeat after a reload)
 
 function findInvite(code) {
-  const normalize = (value) => (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const invite = mockInvites.find((i) => normalize(i.code) === normalize(code));
+  const wanted = (code ?? '').trim().toUpperCase();
+  const invite = mockInvites.find((i) => i.code === wanted);
   if (!invite) throw apiError(404, { message: 'We couldn’t find that invite code.' });
   return invite;
 }
@@ -259,13 +300,17 @@ async function mockGetInvite(code) {
   return structuredClone(findInvite(code));
 }
 
-async function mockJoinGroup({ code }) {
+async function mockJoinGroup({ code, upgrade }) {
   await wait(MOCK_DELAY_MS);
 
   const user = requireSession();
   if (!code?.trim()) throw validationError('The given data was invalid.', { code: ['Enter your invite code.'] });
   const { group, role } = findInvite(code);
   const existing = memberships.find((m) => m.email === user.email && m.membership.group.id === group.id);
+  if (existing && upgrade && role === 'coach' && existing.membership.role === 'member') {
+    existing.membership = { ...existing.membership, role };
+    return existing.membership;
+  }
   if (existing) {
     throw apiError(409, {
       message: 'You’re already in this group.',
@@ -301,25 +346,92 @@ async function mockConfirmTwoFactor({ code }) {
   return updateSessionUser({ two_factor_confirmed_at: new Date().toISOString() });
 }
 
-async function mockApplyToHost({ school_email, school_code, role_proof }) {
+const schoolCodeKey = (user, schoolEmail) => `${user.email}|${schoolEmail.trim().toLowerCase()}`;
+
+async function mockSendSchoolEmailCode({ school_email = '' }) {
+  await wait(MOCK_DELAY_MS);
+
+  const user = requireSession();
+  const error = schoolEmailError(school_email.trim());
+  if (error) throw validationError('The given data was invalid.', { school_email: [error] });
+  return { message: 'We sent a code.', ...schoolEmailCodes.send(schoolCodeKey(user, school_email)) };
+}
+
+async function mockVerifySchoolEmail({ school_email = '', code }) {
+  await wait(MOCK_DELAY_MS);
+
+  const user = requireSession();
+  schoolEmailCodes.check(schoolCodeKey(user, school_email), code);
+  return { school_email: school_email.trim(), verified: true };
+}
+
+async function mockApplyToHost(application) {
   await wait(MOCK_DELAY_MS);
 
   const user = requireSession();
   if (!user.two_factor_confirmed_at) {
     throw apiError(403, { message: 'Confirm two-factor first.', code: 'two_factor_required' });
   }
-  const errors = {};
-  if (!/^\S+@\S+\.\S+$/.test(school_email ?? '')) errors.school_email = ['Enter a valid school email.'];
-  if (!school_code?.trim()) errors.school_code = ['Enter your school code.'];
-  if (!role_proof) errors.role_proof = ['Upload proof of your role.'];
-  else if (!PROOF_TYPES.includes(role_proof.type) || role_proof.size > MAX_PROOF_BYTES) {
-    errors.role_proof = ['Upload a JPG, PNG or PDF up to 5 MB.'];
-  }
+  const errors = hostApplicationErrors(application);
   if (Object.keys(errors).length > 0) throw validationError('The given data was invalid.', errors);
-  if (pendingApplicants.has(user.email)) {
+  if (user.host_status === 'pending') {
     throw apiError(409, { message: 'You already have an application under review.', code: 'already_pending' });
   }
+  if (user.host_status === 'verified') {
+    throw apiError(409, { message: 'You’re already a verified Host.', code: 'already_verified' });
+  }
 
-  pendingApplicants.add(user.email);
+  mockHostApplications[user.email] = {
+    status: 'pending',
+    submitted_at: new Date().toISOString(),
+    rejection_reason: null,
+  };
+  updateSessionUser({ host_status: 'pending' });
   return { status: 'pending' };
+}
+
+function hostApplicationErrors({
+  host_type,
+  school_email,
+  school_code,
+  institution,
+  role_title,
+  role_proof,
+  organization_name,
+  proof_link,
+  proof_file,
+}) {
+  const errors = {};
+  if (host_type === 'school') {
+    const emailError = schoolEmailError(school_email ?? '');
+    if (emailError) errors.school_email = [emailError];
+    // The real API checks this is the code that verified school_email.
+    if (!/^\d{6}$/.test(school_code ?? '')) errors.school_code = [HOST_MESSAGES.schoolCode];
+    if (!institution?.trim()) errors.institution = [HOST_MESSAGES.institution];
+    if (!role_title?.trim()) errors.role_title = [HOST_MESSAGES.roleTitle];
+    if (!role_proof) errors.role_proof = [HOST_MESSAGES.proofMissing];
+    else if (!isValidProof(role_proof)) errors.role_proof = [HOST_MESSAGES.proofInvalid];
+  } else if (host_type === 'community') {
+    if (!organization_name?.trim()) errors.organization_name = [HOST_MESSAGES.organization];
+    if (!proof_link && !proof_file) errors.proof_file = [HOST_MESSAGES.communityProof];
+    if (proof_link && !isValidProofLink(proof_link)) errors.proof_link = [HOST_MESSAGES.proofLink];
+    if (proof_file && !isValidProof(proof_file)) errors.proof_file = [HOST_MESSAGES.proofInvalid];
+  } else {
+    errors.host_type = ['Choose a host type.'];
+  }
+  return errors;
+}
+
+async function mockGetLatestHostApplication() {
+  await wait(MOCK_DELAY_MS);
+
+  const user = requireSession();
+  return (
+    mockHostApplications[user.email] ?? {
+      // After a reload only the status is left, on the mock session.
+      status: user.host_status ?? 'none',
+      submitted_at: null,
+      rejection_reason: null,
+    }
+  );
 }

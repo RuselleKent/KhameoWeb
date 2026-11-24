@@ -27,7 +27,7 @@ export default function ReadyPage() {
         { title: 'Explore your dashboard', description: 'See your home and schedule.' },
       ]}
       profileTo="/onboarding/coach/profile"
-      nextTo="/onboarding/coach/tour"
+      tourTo="/onboarding/coach/tour"
     />
   );
 }

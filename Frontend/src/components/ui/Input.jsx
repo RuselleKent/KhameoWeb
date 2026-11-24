@@ -27,6 +27,7 @@ const fieldStates = {
  * - Passing `error` sets aria-invalid and links the message with aria-describedby.
  * - `success` shows the green "confirmed" border (ignored while there is an error).
  * - `prefix` is one fixed character shown inside the field, e.g. "@" for usernames.
+ * - `suffix` is short text shown inside the field on the right, e.g. "✓ Domain accepted".
  */
 export default function Input({
   id,
@@ -36,6 +37,7 @@ export default function Input({
   error,
   success = false,
   prefix,
+  suffix,
   placeholder,
   className,
   inputClassName,
@@ -73,6 +75,7 @@ export default function Input({
             fieldBase,
             fieldStates[error ? 'error' : success ? 'success' : 'normal'],
             prefix && 'pl-[31px]',
+            suffix && 'pr-[160px]',
             inputClassName,
           )}
           {...props}
@@ -83,6 +86,11 @@ export default function Input({
             className="pointer-events-none absolute top-[17px] left-[17px] text-base leading-5 text-ink peer-placeholder-shown:text-ink/40"
           >
             {prefix}
+          </span>
+        )}
+        {suffix && (
+          <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-[13px] font-semibold text-success">
+            {suffix}
           </span>
         )}
       </div>

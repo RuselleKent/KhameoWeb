@@ -89,7 +89,7 @@ export async function forgotPassword({ email }) {
 }
 
 /**
- * POST /api/reset-password → { user } (and signs the user in)
+ * POST /api/reset-password → { message }. Does not start a session: the user logs in next (2FA applies).
  * Payload: { token, email, password, password_confirmation }
  * 422: errors.token (link expired or invalid) or errors.password.
  */
@@ -307,7 +307,5 @@ async function mockResetPassword({ token, email, password, password_confirmation
   if (Object.keys(errors).length > 0) throw validationError('The given data was invalid.', errors);
 
   if (account) account.password = password;
-  // Resetting signs the user in on this device.
-  const user = writeSession({ ...(account?.user ?? { ...blankUser, email: normalize(email) }) });
-  return { user };
+  return { message: 'Your password is updated.' };
 }

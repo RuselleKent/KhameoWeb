@@ -44,3 +44,17 @@ export const mockInvites = [
     pending_reviews_count: 7,
   },
 ];
+
+// Latest host application per user email (GET /api/host-applications/latest).
+export const mockHostApplications = {
+  'maria.santos@example.com': {
+    status: 'verified',
+    submitted_at: '2026-11-19T08:09:00.000000Z',
+    rejection_reason: null,
+  },
+  'paolo.reyes@example.com': {
+    status: 'rejected',
+    submitted_at: '2026-11-18T08:09:00.000000Z',
+    rejection_reason: 'Your faculty ID photo is too blurry to read. Please upload a clearer copy.',
+  },
+};

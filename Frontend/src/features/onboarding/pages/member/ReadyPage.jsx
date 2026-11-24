@@ -26,7 +26,7 @@ export default function ReadyPage() {
       description={`You joined ${groupLabel(group)} as a Member. Your host can see your submissions.`}
       cards={cards}
       profileTo="/onboarding/member/profile"
-      nextTo="/onboarding/member/tour"
+      tourTo="/onboarding/member/tour"
     />
   );
 }

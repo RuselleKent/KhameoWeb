@@ -16,6 +16,7 @@ export const blankUser = {
   occupation: null,
   avatar_url: null,
   two_factor_confirmed_at: null,
+  host_status: 'none', // none | pending | verified | rejected
   created_at: null,
   updated_at: null,
 };
@@ -61,19 +62,39 @@ const mockHost = {
   onboarding_path: 'host',
   display_name: 'Maria Santos',
   username: 'maria_santos',
-  occupation: 'Teacher',
+  occupation: 'Teacher or faculty',
   two_factor_confirmed_at: '2026-11-19T08:08:00.000000Z',
+  host_status: 'verified',
   created_at: '2026-11-19T08:00:00.000000Z',
   updated_at: '2026-11-19T08:10:00.000000Z',
 };
 
+// A Host whose application was rejected: /host-status shows the reason and Reapply.
+const mockRejectedHost = {
+  ...blankUser,
+  id: 11,
+  name: 'Paolo Reyes',
+  email: 'paolo.reyes@example.com',
+  email_verified_at: '2026-11-18T08:00:00.000000Z',
+  onboarded_at: '2026-11-18T08:10:00.000000Z',
+  onboarding_path: 'host',
+  display_name: 'Paolo Reyes',
+  username: 'paolo_reyes',
+  occupation: 'Teacher or faculty',
+  two_factor_confirmed_at: '2026-11-18T08:08:00.000000Z',
+  host_status: 'rejected',
+  created_at: '2026-11-18T08:00:00.000000Z',
+  updated_at: '2026-11-20T08:00:00.000000Z',
+};
+
 // Login credentials for the mock API only (Jane: verified + onboarded → /home;
-// Juan: verified, not onboarded → /onboarding; Maria: two-factor, then /home). The password is never part of a user
-// object; auth.api.js returns `user` on success.
+// Juan: verified, not onboarded → /onboarding; Maria and Paolo: two-factor, then /home).
+// The password is never part of a user object; auth.api.js returns `user` on success.
 export const mockAccounts = [
   { email: mockUser.email, password: 'Password123', user: mockUser },
   { email: mockCoach.email, password: 'Password123', user: mockCoach },
   { email: mockHost.email, password: 'Password123', user: mockHost },
+  { email: mockRejectedHost.email, password: 'Password123', user: mockRejectedHost },
 ];
 
 export default mockUser;

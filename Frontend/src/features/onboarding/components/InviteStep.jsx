@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Alert from '../../../components/ui/Alert';
+import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import Input from '../../../components/ui/Input';
 import { getErrorInfo } from '../../../lib/apiErrors';
 import { getInvite, joinGroup } from '../onboarding.api';
@@ -10,8 +11,9 @@ import PathCard from './PathCard';
 import StepActions from './StepActions';
 import StepHeading from './StepHeading';
 
+// 4–12 letters, numbers and hyphens (docs/api-onboarding.md section 4).
 const MIN_CODE_LENGTH = 4;
-const MAX_CODE_LENGTH = 20;
+const MAX_CODE_LENGTH = 12;
 const ROLE_NAMES = { member: 'a Member', coach: 'a Coach', co_host: 'a Co-Host', primary_host: 'the Primary Host' };
 
 /**
@@ -31,6 +33,8 @@ export default function InviteStep({ role, copy, preview }) {
   const [codeError, setCodeError] = useState(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // "You're a Member … Join as Coach instead?"
+  const [confirmingUpgrade, setConfirmingUpgrade] = useState(false);
 
   const invite = joined?.invite ?? found;
 
@@ -49,7 +53,11 @@ export default function InviteStep({ role, copy, preview }) {
     updateAnswers({
       path: role,
       startedAs: null,
-      joined: { ...answers.joined, [role]: { invite: found, membership } },
+      // A Member who became a Coach is no longer a Member of that group.
+      joined: {
+        ...(answers.joined.member?.invite.group.id === found.group.id ? {} : answers.joined),
+        [role]: { invite: found, membership },
+      },
     });
     goToProfile();
   }
@@ -65,14 +73,35 @@ export default function InviteStep({ role, copy, preview }) {
       saveJoined(await joinGroup({ code: found.code }));
     } catch (error) {
       if (getErrorInfo(error).code !== 'already_member') throw error;
-      // Already in: fine if it's the same role (e.g. joined earlier, then reloaded). Joining never changes a role.
       const { membership } = error.response.data;
       if (membership?.role === role) {
+        // Already in with this role, e.g. joined earlier, then reloaded.
         saveJoined(membership);
+      } else if (role === 'coach' && membership?.role === 'member') {
+        // A coach code can upgrade a Member, but only once they say so.
+        setConfirmingUpgrade(true);
       } else {
         setFound(null);
         setCodeError(`You’re already in this group as ${ROLE_NAMES[membership?.role] ?? 'a member'}.`);
       }
+    }
+  }
+
+  async function handleUpgrade() {
+    setBusy(true);
+    setFailed(false);
+    try {
+      saveJoined(await joinGroup({ code: found.code, upgrade: true }));
+    } catch (error) {
+      setConfirmingUpgrade(false);
+      if (getErrorInfo(error).status === 404) {
+        setFound(null);
+        setCodeError(copy.notFound);
+      } else {
+        setFailed(true);
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -176,6 +205,19 @@ export default function InviteStep({ role, copy, preview }) {
         loading={busy}
         loadingText={found ? 'Joining…' : 'Checking…'}
       />
+
+      <ConfirmDialog
+        open={confirmingUpgrade}
+        variant="primary"
+        title="Join as Coach instead?"
+        confirmLabel="Join as Coach"
+        loading={busy}
+        loadingText="Joining…"
+        onConfirm={handleUpgrade}
+        onCancel={() => setConfirmingUpgrade(false)}
+      >
+        {found && `You’re a Member of ${found.group.unit ?? found.group.name}. As a Coach you’ll review submissions and give feedback there.`}
+      </ConfirmDialog>
 
       {!joined && !hasCode && <p className="text-[13.5px] leading-[18px] text-muted">{copy.notYetFooter}</p>}
     </form>

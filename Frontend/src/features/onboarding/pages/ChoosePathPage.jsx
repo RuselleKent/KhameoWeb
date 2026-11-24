@@ -22,7 +22,7 @@ export default function ChoosePathPage() {
         How do you want to use Khameo?
       </h1>
       <p className="text-[15px] leading-5 text-muted">
-        Pick one to personalize your start. You can change this later in Settings.
+        Pick one to personalize your start. You can join groups or apply as a Host later.
       </p>
 
       <div
