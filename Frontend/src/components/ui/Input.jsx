@@ -26,6 +26,7 @@ const fieldStates = {
  * - `children` render under the field and its error, above the hint (used for the strength meter).
  * - Passing `error` sets aria-invalid and links the message with aria-describedby.
  * - `success` shows the green "confirmed" border (ignored while there is an error).
+ * - `prefix` is one fixed character shown inside the field, e.g. "@" for usernames.
  */
 export default function Input({
   id,
@@ -34,6 +35,7 @@ export default function Input({
   hint,
   error,
   success = false,
+  prefix,
   placeholder,
   className,
   inputClassName,
@@ -58,20 +60,32 @@ export default function Input({
         </div>
       )}
 
-      <input
-        ref={ref}
-        id={inputId}
-        // A blank placeholder keeps :placeholder-shown working, which drives the "filled" border.
-        placeholder={placeholder ?? ' '}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={cn(describedBy, hintId, errorId) || undefined}
-        className={cn(
-          fieldBase,
-          fieldStates[error ? 'error' : success ? 'success' : 'normal'],
-          inputClassName,
+      <div className="relative">
+        <input
+          ref={ref}
+          id={inputId}
+          // A blank placeholder keeps :placeholder-shown working, which drives the "filled" border.
+          placeholder={placeholder ?? ' '}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={cn(describedBy, hintId, errorId) || undefined}
+          className={cn(
+            'peer',
+            fieldBase,
+            fieldStates[error ? 'error' : success ? 'success' : 'normal'],
+            prefix && 'pl-[31px]',
+            inputClassName,
+          )}
+          {...props}
+        />
+        {prefix && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-[17px] left-[17px] text-base leading-5 text-ink peer-placeholder-shown:text-ink/40"
+          >
+            {prefix}
+          </span>
         )}
-        {...props}
-      />
+      </div>
 
       <FieldError id={errorId} className="mt-2">
         {error}

@@ -3,6 +3,16 @@ import { createMockCodes } from '../../mockdata/mockCodes';
 import { apiError, requireSession, updateSessionUser, validationError, wait } from '../../mockdata/mockServer';
 import { CONSENT_VERSION, mockInvites, ONBOARDING_GOALS, ONBOARDING_PATHS } from '../../mockdata/onboarding';
 import { mockAccounts } from '../../mockdata/user';
+import { MAX_GOALS } from './goals';
+import {
+  AVATAR_TYPES,
+  MAX_AVATAR_BYTES,
+  MAX_BIO,
+  MAX_DISPLAY_NAME,
+  MAX_OCCUPATION,
+  MESSAGES,
+  USERNAME_PATTERN,
+} from './profileRules';
 
 // Flip to false once the endpoints in docs/api-onboarding.md are ready.
 const USE_MOCK = true;
@@ -122,15 +132,9 @@ export async function applyToHost({ school_email, school_code, role_proof }) {
 // ---- Mock --------------------------------------------------------------------
 // Invite codes: SPEAK-2026 (group member), COACH-2026 (coach). Anything else is a 404.
 // Two-factor codes: see mockdata/mockCodes.js (123456 is correct).
-// Uploaded photos, memberships, host applications and codes live in memory until a reload.
+// Uploaded photos are resized and kept in the mock session. Memberships, host applications and codes
+// live in memory until a reload.
 
-const MAX_GOALS = 3;
-const MAX_DISPLAY_NAME = 80;
-const MAX_BIO = 160;
-const MAX_OCCUPATION = 60;
-const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
-const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
-const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_PROOF_BYTES = 5 * 1024 * 1024;
 const PROOF_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 
@@ -166,11 +170,30 @@ async function mockUploadAvatar({ avatar }) {
 
   requireSession();
   if (!avatar) throw validationError('The given data was invalid.', { avatar: ['Choose a photo.'] });
-  if (!AVATAR_TYPES.includes(avatar.type) || avatar.size > MAX_AVATAR_BYTES) {
-    throw validationError('The given data was invalid.', { avatar: ['Upload a JPG, PNG or WEBP up to 5 MB.'] });
+  const invalid = () => validationError('The given data was invalid.', { avatar: [MESSAGES.avatar] });
+  if (!AVATAR_TYPES.includes(avatar.type) || avatar.size > MAX_AVATAR_BYTES) throw invalid();
+  try {
+    const avatar_url = await resizeToDataUrl(avatar);
+    updateSessionUser({ avatar_url });
+    return { avatar_url };
+  } catch {
+    // Not really an image, whatever its type says.
+    throw invalid();
   }
-  // Not stored on the session user: this URL stops working after a reload.
-  return { avatar_url: URL.createObjectURL(avatar) };
+}
+
+/** A small square copy as a data URL (stands in for the stored photo's public URL). */
+async function resizeToDataUrl(file, size = 256) {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  canvas
+    .getContext('2d')
+    .drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
+  bitmap.close();
+  return canvas.toDataURL('image/jpeg', 0.85);
 }
 
 async function mockRemoveAvatar() {
@@ -179,8 +202,6 @@ async function mockRemoveAvatar() {
   updateSessionUser({ avatar_url: null });
   return { avatar_url: null };
 }
-
-const USERNAME_FORMAT_MESSAGE = 'Use 3–20 letters, numbers or underscores.';
 
 function isUsernameTaken(username, user) {
   const wanted = username.toLowerCase();
@@ -193,7 +214,7 @@ async function mockCheckUsername({ username }) {
   const user = requireSession();
   const wanted = username?.trim() ?? '';
   if (!USERNAME_PATTERN.test(wanted)) {
-    throw validationError('The given data was invalid.', { username: [USERNAME_FORMAT_MESSAGE] });
+    throw validationError('The given data was invalid.', { username: [MESSAGES.usernameFormat] });
   }
   return { available: !isUsernameTaken(wanted, user) };
 }
@@ -210,12 +231,12 @@ async function mockCompleteOnboarding({ path, goals = [], profile = {} }) {
   const errors = {};
   if (!ONBOARDING_PATHS.includes(path)) errors.path = ['Choose how you want to use Khameo.'];
   if (goals.length > MAX_GOALS || goals.some((g) => !ONBOARDING_GOALS.includes(g))) errors.goals = ['Choose up to 3.'];
-  if (!displayName) errors['profile.display_name'] = ['Enter a display name.'];
+  if (!displayName) errors['profile.display_name'] = [MESSAGES.displayName];
   else if (displayName.length > MAX_DISPLAY_NAME) errors['profile.display_name'] = ['Use up to 80 characters.'];
   if (!USERNAME_PATTERN.test(username)) {
-    errors['profile.username'] = [USERNAME_FORMAT_MESSAGE];
+    errors['profile.username'] = [MESSAGES.usernameFormat];
   } else if (isUsernameTaken(username, user)) {
-    errors['profile.username'] = ['That username is taken.'];
+    errors['profile.username'] = [MESSAGES.usernameTaken];
   }
   if (bio?.length > MAX_BIO) errors['profile.bio'] = ['Use up to 160 characters.'];
   if (occupation?.length > MAX_OCCUPATION) errors['profile.occupation'] = ['Use up to 60 characters.'];

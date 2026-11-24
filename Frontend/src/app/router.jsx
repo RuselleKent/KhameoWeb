@@ -17,7 +17,12 @@ import OnboardingLayout from '../features/onboarding/components/OnboardingLayout
 import ConsentPage from '../features/onboarding/pages/ConsentPage';
 import ChoosePathPage from '../features/onboarding/pages/ChoosePathPage';
 import NextStepPage from '../features/onboarding/pages/NextStepPage';
+import RequirePath from '../features/onboarding/components/RequirePath';
+import TourPage from '../features/onboarding/pages/TourPage';
 import TwoFactorPage from '../features/onboarding/pages/TwoFactorPage';
+import GoalsPage from '../features/onboarding/pages/personal/GoalsPage';
+import ProfilePage from '../features/onboarding/pages/personal/ProfilePage';
+import ReadyPage from '../features/onboarding/pages/personal/ReadyPage';
 import { PATHS } from '../features/onboarding/paths';
 import HomePage from '../features/home/pages/HomePage';
 
@@ -57,8 +62,34 @@ export const router = createBrowserRouter([
                 element: <OnboardingLayout />,
                 children: [
                   { index: true, element: <ChoosePathPage />, handle: { step: 1, totalSteps: 4 } },
-                  // Step 2 of each path; placeholders for now.
-                  ...PATHS.map(({ id }) => ({
+                  {
+                    path: 'personal',
+                    element: <RequirePath pathId="personal" />,
+                    children: [
+                      {
+                        index: true,
+                        element: <GoalsPage />,
+                        handle: {
+                          step: 2,
+                          totalSteps: 4,
+                          skip: { to: '/onboarding/personal/profile', clear: { goals: [] } },
+                        },
+                      },
+                      { path: 'profile', element: <ProfilePage />, handle: { step: 3, totalSteps: 4 } },
+                      {
+                        path: 'ready',
+                        element: <ReadyPage />,
+                        handle: { step: 4, totalSteps: 4, wide: true, afterOnboarding: true },
+                      },
+                      {
+                        path: 'tour',
+                        element: <TourPage readyTo="/onboarding/personal/ready" />,
+                        handle: { step: 4, totalSteps: 4, afterOnboarding: true },
+                      },
+                    ],
+                  },
+                  // Step 2 of the other paths; placeholders for now.
+                  ...PATHS.filter(({ id }) => id !== 'personal').map(({ id }) => ({
                     path: id,
                     element: (
                       <NextStepPage

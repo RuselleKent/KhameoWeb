@@ -20,6 +20,8 @@ const variants = {
   ghost: `text-ink hover:bg-ink/5 ${fade}`,
   // Ghost with the brand colour ("Not now" on the consent screen).
   ghostBrand: `text-brand hover:bg-brand/5 ${fade}`,
+  // Confirming a removal (ConfirmDialog).
+  danger: `bg-danger text-white hover:bg-danger/90 ${fade}`,
 };
 
 const sizes = {
@@ -30,6 +32,8 @@ const sizes = {
   block: 'h-13 w-full px-4 text-[15px]',
   // Same with the 17px label used on the onboarding steps.
   blockLg: 'h-13 w-full px-[22px] text-[17px]',
+  // Small text link-like button under a main action.
+  text: 'h-8 px-2 text-sm',
 };
 
 /**
