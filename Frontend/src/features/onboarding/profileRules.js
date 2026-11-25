@@ -2,7 +2,6 @@
 export const MAX_DISPLAY_NAME = 80;
 export const MAX_USERNAME = 20;
 export const MAX_BIO = 160;
-export const MAX_OCCUPATION = 60;
 export const USERNAME_PATTERN = /^[A-Za-z0-9_]{3,20}$/;
 
 export const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'];

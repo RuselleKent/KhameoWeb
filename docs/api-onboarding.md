@@ -12,11 +12,12 @@ needs to review them.
 
 Changes:
 - Rev 2 (Jenny's decisions): one versioned recording consent, "Not now" rules, separate avatar upload,
-  username / bio / occupation, `onboarding_path`, and two-factor codes for Hosts.
+  username / bio, `onboarding_path`, and two-factor codes for Hosts.
 - Rev 3 (Jenny's decisions): `code` everywhere, username check, remove photo, 5 MB photos. Log in with
   two-factor is in `docs/api-auth.md` section 2.
+- Rev 7 (Jenny's decisions): speaking **roles with audiences** replace `occupation`; AI audience suggestions (2c).
 - Rev 6 (Jenny's decisions): `host_status`, school / community hosts, `GET /api/host-applications/latest`, coach
-  upgrade, invite code format, occupation list.
+  upgrade, invite code format.
 - Rev 5: host path; `host_type`, `institution`, `role_title` and the school email endpoints (section 8).
 - Rev 4: personal, member and coach paths; more fields on the invite (section 4), `membership` on the 409 (section 5).
 
@@ -28,6 +29,7 @@ Changes:
 | 2 | `POST /api/user/avatar` | profile step, later Settings | signed in, verified |
 | 2a | `DELETE /api/user/avatar` | profile step, later Settings | signed in, verified |
 | 2b | `GET /api/usernames/check` | profile step, later Settings | signed in, verified |
+| 2c | `POST /api/ai/suggest-audiences` | profile step | signed in, verified |
 | 3 | `PATCH /api/user/onboarding` | last onboarding step | signed in, verified |
 | 4 | `GET /api/invites/{code}` | member and coach paths | signed in, verified |
 | 5 | `POST /api/groups/join` | member and coach paths, later Groups | signed in, verified |
@@ -62,7 +64,7 @@ The user object is the one in `docs/api-auth.md`, plus:
 | `display_name` | string or `null` | Name shown in groups and lobbies. |
 | `username` | string or `null` | Unique handle, without the `@`. |
 | `bio` | string or `null` | |
-| `occupation` | string or `null` | What the user does. The app offers Student, Teacher or faculty, Working professional, Other; "Other" sends what the user typed. Not a group role. |
+| `roles` | array | Speaking roles: `[{ "name": "Student", "audiences": ["Classmates"] }]`, `[]` when there are none. Who the user speaks as, **not** a group role. |
 | `avatar_url` | string or `null` | |
 | `two_factor_confirmed_at` | timestamp or `null` | When two-factor was confirmed. |
 | `host_status` | string | `none`, `pending`, `verified` or `rejected`. **Create group is allowed only when `verified`**; enforce it in the API too. |
@@ -160,6 +162,30 @@ The frontend asks for confirmation first. Uploading and removing save right away
 
 **429** **[proposed]** — too many checks (it could be used to list usernames): `{ "message": "…", "retry_after": 30 }`
 
+### 2c. Suggest audiences — `POST /api/ai/suggest-audiences`
+
+Optional help on the profile step. The default audiences are static in the app
+(`Frontend/src/features/onboarding/audiences.js`), so the step works without AI. The backend calls Gemini.
+
+Request: `existing_audiences` is every audience listed for that role now, checked or not.
+```json
+{ "role": "Student", "existing_audiences": ["Classmates", "Professors", "Thesis Panel"] }
+```
+
+**200** — new audiences only, none from `existing_audiences`. Plain text, up to 40 characters each:
+```json
+{ "audiences": ["Student Council", "Adviser", "Department Faculty", "Scholarship Committee"] }
+```
+The app also drops repeats, trims and cuts to 40 characters. "Generate again" is the same call; the app then
+replaces only the suggestions that aren't checked.
+
+**503** — Gemini is down or over quota: `{ "message": "…", "code": "ai_unavailable" }`. The app shows "AI suggestions
+aren’t available right now." with Retry.
+**429** — more than **10 a minute** per user: `{ "message": "…", "retry_after": 30 }`
+**422** **[proposed]** — `role` empty or longer than 40 characters.
+
+`role` can be anything the user typed: treat it as data in the prompt, never as instructions **[proposed]**.
+
 ## 3. Finish onboarding — `PATCH /api/user/onboarding`
 
 Sent once, at the end of onboarding, with every answer. JSON only: it never carries the photo.
@@ -173,7 +199,10 @@ Request:
     "display_name": "Jane Cruz",
     "username": "jane_cruz",
     "bio": "BSCS, ACLC Sta. Maria. Practicing for my thesis defense.",
-    "occupation": "Student"
+    "roles": [
+      { "name": "Student", "audiences": ["Classmates", "Thesis Panel"] },
+      { "name": "Real estate agent", "audiences": [] }
+    ]
   }
 }
 ```
@@ -185,7 +214,9 @@ Request:
 | `profile.display_name` | required, up to 80 characters **[proposed limit]** |
 | `profile.username` | required, unique, 3–20 characters, letters / numbers / underscore. Unique regardless of case **[proposed]** |
 | `profile.bio` | optional, up to 160 characters |
-| `profile.occupation` | optional string, up to 60 characters **[proposed limit]**. Not limited to the app's list ("Other" is free text) |
+| `profile.roles` | optional array, up to **5**. Replaces `occupation` |
+| `profile.roles.*.name` | required, 1–40 characters, unique regardless of case **[proposed]**. The app offers Student, Teacher or faculty, Working professional, Researcher, Event host or emcee, or a custom role |
+| `profile.roles.*.audiences` | array of up to **20** names, 1–40 characters each. Only checked audiences are sent; may be empty |
 
 Goal values, from the Figma "What do you want to improve?" step: `fewer_filler_words`, `steady_pace`,
 `confident_tone`, `clear_opening`, `strong_closing`, `stay_on_time`.
@@ -207,7 +238,11 @@ section 8, from Groups or Settings.
 | `profile.username` | wrong length or characters | Use 3–20 letters, numbers or underscores. |
 | `profile.username` | taken (also if someone took it since the check) | That username is taken. |
 | `profile.bio` | too long | Use up to 160 characters. |
-| `profile.occupation` | too long | Use up to 60 characters. |
+| `profile.roles` | more than 5 | Add up to 5 roles. |
+| `profile.roles.0.name` | empty or too long | Use 1–40 characters for a role. |
+| `profile.roles.0.name` | repeated | You already added this role. |
+| `profile.roles.0.audiences` | more than 20 | Check up to 20 audiences per role. |
+| `profile.roles.0.audiences` | an empty or too long name | Use 1–40 characters for an audience. |
 
 ## 4. Look up an invite — `GET /api/invites/{code}`
 
@@ -430,13 +465,12 @@ and a Reapply button.
 | One consent or two? | One, versioned: `recording_consent_at` + `consent_version`. |
 | After "Not now"? | Everything except recording; the API answers 403 `consent_required`. |
 | Photo upload | Separate `POST /api/user/avatar`. |
-| Profile fields | `display_name`, `username`, `bio`, `occupation`. Figma's "role" is "who you speak as" (example: Student), so it is `occupation`. |
+| Profile fields | `display_name`, `username`, `bio`, `roles`. |
 | Change path later | No endpoint; `onboarding_path` is for reporting. |
 | Host 2FA | Email codes: sections 6 and 7 turn it on; `docs/api-auth.md` section 2 asks at log in. |
 | Reason field | `code` everywhere. |
 | Taken username | Check endpoint (2b), and the final request still validates. |
-| Audiences | Out of scope for onboarding; target audience belongs to the Solo Practice session setup (SRS 5.1). `occupation` is a single choice. |
-| Occupation | List in the app (Student, Teacher or faculty, Working professional, Other), stored as a string. |
+| Roles and audiences | Back on the profile step, as in Figma: up to 5 speaking roles, up to 20 audiences each. Replaces `occupation` and the earlier "audiences are out of scope". |
 | Invite codes | 4–12 letters, numbers and hyphens; not case-sensitive. |
 | Coach code for a Member | Upgrades them after they confirm. |
 | Community hosts | In scope: organization name and a link or file, plus 2FA. |

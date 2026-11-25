@@ -4,12 +4,14 @@ import { apiError, validationError, wait } from '../../mockdata/mockServer';
 import { connectMockUser, requireUser, updateUser, withMockFields } from '../../mockdata/mockUserStore';
 import {
   CONSENT_VERSION,
+  mockAiAudiences,
   mockHostApplications,
   mockInvites,
   ONBOARDING_GOALS,
   ONBOARDING_PATHS,
 } from '../../mockdata/onboarding';
 import { mockAccounts } from '../../mockdata/user';
+import { MAX_AUDIENCE_NAME, MAX_CHECKED_AUDIENCES, MAX_ROLE_NAME, MAX_ROLES } from './audiences';
 import { MAX_GOALS } from './goals';
 import { HOST_MESSAGES, isValidProof, isValidProofLink, schoolEmailError } from './hostRules';
 import {
@@ -17,10 +19,10 @@ import {
   MAX_AVATAR_BYTES,
   MAX_BIO,
   MAX_DISPLAY_NAME,
-  MAX_OCCUPATION,
   MESSAGES,
   USERNAME_PATTERN,
 } from './profileRules';
+import { sameName } from './roles';
 
 // Flip to false once the endpoints in docs/api-onboarding.md are ready (Russel). Until then every
 // function below is mocked; "Waits for:" names the endpoint it stands in for.
@@ -96,7 +98,7 @@ export async function checkUsername({ username, signal }) {
 
 /**
  * PATCH /api/user/onboarding → user with onboarded_at and onboarding_path.
- * profile: { display_name, username, bio, occupation } (the photo goes through uploadAvatar)
+ * profile: { display_name, username, bio, roles: [{ name, audiences: [...] }] } (the photo goes through uploadAvatar)
  * 422: errors.path, errors.goals, errors['profile.username'], …
  * Waits for: PATCH /api/user/onboarding
  */
@@ -105,6 +107,18 @@ export async function completeOnboarding({ path, goals, profile }) {
 
   await getCsrfCookie();
   const { data } = await api.patch('/api/user/onboarding', { path, goals, profile });
+  return data;
+}
+
+/**
+ * POST /api/ai/suggest-audiences → { audiences: [...] } for a speaking role, none of them in existing_audiences.
+ * 503 code: 'ai_unavailable'. 429: retry_after (10 a minute).
+ */
+export async function suggestAudiences({ role, existing_audiences }) {
+  if (USE_MOCK) return mockSuggestAudiences({ role, existing_audiences });
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/ai/suggest-audiences', { role, existing_audiences });
   return data;
 }
 
@@ -215,6 +229,7 @@ export async function getLatestHostApplication() {
 
 // ---- Mock --------------------------------------------------------------------
 // Invite codes: ACLC-4A (group member), COACH-RINA (coach). Anything else is a 404.
+// AI suggestions: localStorage.setItem('khameo.mockAiDown', '1') makes them answer 503; remove it to bring them back.
 // Two-factor and school email codes: see mockdata/mockCodes.js (123456 is correct).
 // Uploaded photos (resized) and host_status are kept in the mock session. Memberships, application details
 // and codes live in memory until a reload. Nobody approves applications in the mock: log in as
@@ -308,7 +323,7 @@ async function mockCompleteOnboarding({ path, goals = [], profile = {} }) {
   const displayName = profile.display_name?.trim() ?? '';
   const username = profile.username?.trim() ?? '';
   const bio = profile.bio?.trim() || null;
-  const occupation = profile.occupation?.trim() || null;
+  const roles = profile.roles ?? [];
 
   const errors = {};
   if (!ONBOARDING_PATHS.includes(path)) errors.path = ['Choose how you want to use Khameo.'];
@@ -321,7 +336,7 @@ async function mockCompleteOnboarding({ path, goals = [], profile = {} }) {
     errors['profile.username'] = [MESSAGES.usernameTaken];
   }
   if (bio?.length > MAX_BIO) errors['profile.bio'] = ['Use up to 160 characters.'];
-  if (occupation?.length > MAX_OCCUPATION) errors['profile.occupation'] = ['Use up to 60 characters.'];
+  Object.assign(errors, roleErrors(roles));
   if (Object.keys(errors).length > 0) throw validationError('The given data was invalid.', errors);
 
   return updateUser({
@@ -330,8 +345,51 @@ async function mockCompleteOnboarding({ path, goals = [], profile = {} }) {
     display_name: displayName,
     username,
     bio,
-    occupation,
+    roles,
   });
+}
+
+function roleErrors(roles) {
+  const errors = {};
+  if (roles.length > MAX_ROLES) errors['profile.roles'] = ['Add up to 5 roles.'];
+  roles.forEach(({ name, audiences = [] }, i) => {
+    if (!name?.trim() || name.length > MAX_ROLE_NAME) {
+      errors[`profile.roles.${i}.name`] = ['Use 1–40 characters for a role.'];
+    } else if (roles.slice(0, i).some((other) => sameName(other.name ?? '', name))) {
+      errors[`profile.roles.${i}.name`] = ['You already added this role.'];
+    }
+    if (audiences.length > MAX_CHECKED_AUDIENCES) {
+      errors[`profile.roles.${i}.audiences`] = ['Check up to 20 audiences per role.'];
+    } else if (audiences.some((a) => !a?.trim() || a.length > MAX_AUDIENCE_NAME)) {
+      errors[`profile.roles.${i}.audiences`] = ['Use 1–40 characters for an audience.'];
+    }
+  });
+  return errors;
+}
+
+const AI_CALLS_PER_MINUTE = 10;
+const AI_SUGGESTIONS = 4;
+let aiCalls = []; // timestamps
+
+async function mockSuggestAudiences({ existing_audiences = [] }) {
+  await wait(1000);
+
+  requireUser();
+  if (localStorage.getItem('khameo.mockAiDown')) {
+    throw apiError(503, { message: 'AI suggestions aren’t available right now.', code: 'ai_unavailable' });
+  }
+  const now = Date.now();
+  aiCalls = aiCalls.filter((time) => now - time < 60_000);
+  if (aiCalls.length >= AI_CALLS_PER_MINUTE) {
+    throw apiError(429, { message: 'Too many requests.', retry_after: Math.ceil((aiCalls[0] + 60_000 - now) / 1000) });
+  }
+  aiCalls.push(now);
+
+  return {
+    audiences: mockAiAudiences
+      .filter((audience) => !existing_audiences.some((existing) => sameName(existing, audience)))
+      .slice(0, AI_SUGGESTIONS),
+  };
 }
 
 async function mockGetInvite(code) {

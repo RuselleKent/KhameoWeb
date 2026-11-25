@@ -4,8 +4,8 @@ import Input from '../../../components/ui/Input';
 import { MAX_BIO, MAX_DISPLAY_NAME, MAX_USERNAME, MESSAGES } from '../profileRules';
 import { useOnboarding } from '../useOnboarding';
 import { useUsernameCheck } from '../useUsernameCheck';
-import OccupationField from './OccupationField';
 import ProfilePhoto from './ProfilePhoto';
+import RolesSection from './RolesSection';
 import StepActions from './StepActions';
 import StepHeading from './StepHeading';
 
@@ -19,7 +19,7 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
   const navigate = useNavigate();
   const location = useLocation();
   const id = useId();
-  const { answers, updateAnswers } = useOnboarding();
+  const { answers, updateProfile } = useOnboarding();
   const { profile } = answers;
 
   const [serverErrors, setServerErrors] = useState(location.state?.errors ?? {});
@@ -31,9 +31,17 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
   const canContinue = !nameMissing && (usernameStatus === 'available' || usernameStatus === 'error');
 
   function setField(field, value) {
-    updateAnswers({ profile: { ...profile, [field]: value } });
+    updateProfile(() => ({ [field]: value }));
     setServerErrors((errors) => ({ ...errors, [field]: undefined }));
   }
+
+  function changeRoles(getRoles) {
+    updateProfile((current) => ({ roles: getRoles(current.roles) }));
+    // 'roles', or a nested field such as 'roles.0.name'.
+    setServerErrors((errors) => Object.fromEntries(Object.entries(errors).filter(([field]) => !field.startsWith('roles'))));
+  }
+
+  const rolesError = Object.entries(serverErrors).find(([field]) => field.startsWith('roles'))?.[1];
 
   const touch = (field) => setTouched((fields) => ({ ...fields, [field]: true }));
 
@@ -124,13 +132,11 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
         error={serverErrors.bio}
       />
 
-      <OccupationField
-        value={profile.occupation}
-        onChange={(value) => setField('occupation', value)}
-        error={serverErrors.occupation}
-      />
+      <RolesSection roles={profile.roles} onChange={changeRoles} error={rolesError} />
 
-      <p className="text-[13.5px] leading-[18px] text-muted">You can change these in Settings.</p>
+      <p className="text-[13.5px] leading-[18px] text-muted">
+        Pick any that apply. You can change these in Settings.
+      </p>
 
       <StepActions backTo={backTo} continueDisabled={!canContinue} />
     </form>

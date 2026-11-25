@@ -23,12 +23,13 @@ const EMPTY_ANSWERS = {
   },
   goals: [],
   // The photo is uploaded on its own (uploadAvatar), so it isn't kept here.
-  profile: { display_name: '', username: '', bio: '', occupation: '' },
+  // roles: the editing shape of roles.js, with unchecked audiences too.
+  profile: { display_name: '', username: '', bio: '', roles: [] },
 };
 
-// v3: bumped when the answers changed (host types), so older drafts are ignored.
+// v4: bumped when the answers changed (roles), so older drafts are ignored.
 // created_at keeps two accounts apart if a mock id is ever reused.
-const storageKeyFor = (user) => `khameo.onboarding.v3.${user.id}.${user.created_at}`;
+const storageKeyFor = (user) => `khameo.onboarding.v4.${user.id}.${user.created_at}`;
 
 function readAnswers(key, user) {
   const initial = { ...EMPTY_ANSWERS, profile: { ...EMPTY_ANSWERS.profile, display_name: user.name ?? '' } };
@@ -43,8 +44,10 @@ function readAnswers(key, user) {
  * Keeps the onboarding answers while the user moves between steps (including Back and reload:
  * they are saved in this tab's sessionStorage). Nothing is sent to the API from here.
  *
- * Context value: { answers, updateAnswers, updateHost, proofFile, setProofFile }
+ * Context value: { answers, updateAnswers, updateProfile, updateHost, proofFile, setProofFile }
  * - updateAnswers({ path: 'member' }) merges the given fields; updateHost does the same for answers.host
+ * - updateProfile((profile) => changes) does it for answers.profile, from its latest value, so a late reply
+ *   (AI suggestions) can't undo what the user did meanwhile
  * - proofFile is the chosen role proof. A File can't be saved, so it is lost on reload.
  */
 export default function OnboardingProvider({ children }) {
@@ -61,14 +64,19 @@ export default function OnboardingProvider({ children }) {
   }, [storageKey, answers]);
 
   const updateAnswers = useCallback((changes) => setAnswers((current) => ({ ...current, ...changes })), []);
+  const updateProfile = useCallback(
+    (getChanges) =>
+      setAnswers((current) => ({ ...current, profile: { ...current.profile, ...getChanges(current.profile) } })),
+    [],
+  );
   const updateHost = useCallback(
     (changes) => setAnswers((current) => ({ ...current, host: { ...current.host, ...changes } })),
     [],
   );
   const [proofFile, setProofFile] = useState(null);
   const value = useMemo(
-    () => ({ answers, updateAnswers, updateHost, proofFile, setProofFile }),
-    [answers, updateAnswers, updateHost, proofFile],
+    () => ({ answers, updateAnswers, updateProfile, updateHost, proofFile, setProofFile }),
+    [answers, updateAnswers, updateProfile, updateHost, proofFile],
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
