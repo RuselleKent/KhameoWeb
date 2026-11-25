@@ -1,5 +1,7 @@
 import api, { getCsrfCookie } from '../../lib/api';
-import { mockAccounts } from '../../mockdata/user';
+import { createMockCodes } from '../../mockdata/mockCodes';
+import { apiError, rateLimitError, readSession, validationError, wait, writeSession } from '../../mockdata/mockServer';
+import { blankUser, mockAccounts } from '../../mockdata/user';
 
 // Flip to false once the endpoints in docs/api-auth.md are ready.
 const USE_MOCK = false;
@@ -9,12 +11,37 @@ const MOCK_DELAY_MS = 700;
 // Every function resolves with the response body. Failures reject with the axios error;
 // read them with getFieldErrors() / getErrorInfo() below. Shapes: docs/api-auth.md.
 
-/** POST /api/login → user. 422: errors.email (no account) or errors.password (wrong password). */
+/**
+ * POST /api/login → user, or { two_factor_required: true } when two-factor is on (no session yet;
+ * a code was emailed, see loginTwoFactor). 422: errors.email (no account) or errors.password.
+ */
 export async function login({ email, password, remember = false }) {
   if (USE_MOCK) return mockLogin({ email, password });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/login', { email, password, remember });
+  return data;
+}
+
+/**
+ * POST /api/login/two-factor → user. Finishes a log in that answered two_factor_required.
+ * 422 code: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
+ * 401 code: 'login_expired' (start again at /login)
+ */
+export async function loginTwoFactor({ code }) {
+  if (USE_MOCK) return mockLoginTwoFactor({ code });
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/login/two-factor', { code });
+  return data;
+}
+
+/** POST /api/login/two-factor/resend → { expires_in, resend_in }. 429: retry_after. 401 code: 'login_expired'. */
+export async function resendLoginCode() {
+  if (USE_MOCK) return mockResendLoginCode();
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/login/two-factor/resend');
   return data;
 }
 
@@ -33,7 +60,7 @@ export async function register(payload) {
 
 /**
  * POST /api/email/verify → { user }
- * 422 error: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
+ * 422 code: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
  */
 export async function verifyEmail({ email, code }) {
   if (USE_MOCK) return mockVerifyEmail({ email, code });
@@ -62,7 +89,7 @@ export async function forgotPassword({ email }) {
 }
 
 /**
- * POST /api/reset-password → { user } (and signs the user in)
+ * POST /api/reset-password → { message }. Does not start a session: the user logs in next (2FA applies).
  * Payload: { token, email, password, password_confirmation }
  * 422: errors.token (link expired or invalid) or errors.password.
  */
@@ -92,84 +119,25 @@ export async function logout() {
 
 // ---- Error helpers -----------------------------------------------------------
 
-/**
- * Pull the first message per field out of a Laravel 422 error.
- * Returns {} for anything that isn't a validation error.
- */
-export function getFieldErrors(error) {
-  if (error?.response?.status !== 422) return {};
-  const errors = error.response.data?.errors ?? {};
-  return Object.fromEntries(
-    Object.entries(errors).map(([field, messages]) => [field, [].concat(messages)[0]]),
-  );
-}
-
-/** { status, code, retryAfter, attemptsLeft } from an API error; status is undefined for network errors. */
-export function getErrorInfo(error) {
-  const response = error?.response;
-  const data = response?.data ?? {};
-  return {
-    status: response?.status,
-    code: data.error,
-    retryAfter: data.retry_after,
-    attemptsLeft: data.attempts_left,
-  };
-}
+export { getErrorInfo, getFieldErrors } from '../../lib/apiErrors';
 
 // ---- Mock --------------------------------------------------------------------
 // Mock rules (handy for testing):
-//   verify code      123456 is correct; 000000 acts as an expired code; 3 wrong tries locks it
-//   codes            expire after 10 minutes; "resend" unlocks 60 seconds after the last send
+//   codes            see mockdata/mockCodes.js (123456 is correct)
+//   two-factor       maria.santos@example.com has it on: logging in asks for a code
 //   reset link       one request per email every 5 minutes, then 429
 //   reset token      "expired" (or empty) is rejected; your current password is rejected
 //   session          the signed-in user is kept in localStorage (stands in for the session cookie),
 //                    so a reload stays signed in. Accounts created by sign-up live in memory only.
 
-export const MOCK_VERIFY_CODE = '123456';
-const CODE_TTL_SECONDS = 600;
-const RESEND_COOLDOWN_SECONDS = 60;
-const MAX_CODE_ATTEMPTS = 3;
 const RESET_LINK_COOLDOWN_SECONDS = 300;
 
-const verificationByEmail = new Map(); // email → { attemptsLeft, expiresAt, resendAt }
+const verificationCodes = createMockCodes();
+const loginCodes = createMockCodes();
 const resetRequestedAt = new Map(); // email → timestamp
-
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function apiError(status, data) {
-  const error = new Error(data.message);
-  error.response = { status, data };
-  return error;
-}
-
-const validationError = (message, errors, extra = {}) => apiError(422, { message, errors, ...extra });
-const rateLimitError = (message, retryAfter) => apiError(429, { message, retry_after: retryAfter });
 
 const normalize = (email) => email.trim().toLowerCase();
 const findAccount = (email) => mockAccounts.find((a) => a.email.toLowerCase() === normalize(email));
-
-const SESSION_KEY = 'khameo.mockSession';
-
-function readSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSession(user) {
-  try {
-    if (user) localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    else localStorage.removeItem(SESSION_KEY);
-  } catch {
-    // Storage blocked (private mode etc.): the session just won't survive a reload.
-  }
-  return user;
-}
 
 async function mockGetUser() {
   await wait(300);
@@ -181,16 +149,6 @@ async function mockGetUser() {
 async function mockLogout() {
   await wait(300);
   writeSession(null);
-}
-
-function sendCode(email,{ cooldown = RESEND_COOLDOWN_SECONDS } = {}) {
-  const now = Date.now();
-  verificationByEmail.set(normalize(email), {
-    attemptsLeft: MAX_CODE_ATTEMPTS,
-    expiresAt: now + CODE_TTL_SECONDS * 1000,
-    resendAt: now + cooldown * 1000,
-  });
-  return { expires_in: CODE_TTL_SECONDS, resend_in: RESEND_COOLDOWN_SECONDS };
 }
 
 async function mockLogin({ email, password }) {
@@ -207,7 +165,58 @@ async function mockLogin({ email, password }) {
       password: ['That password isn’t right. Try again, or reset it.'],
     });
   }
+  if (account.user.two_factor_confirmed_at) {
+    writePendingLogin(account.email);
+    try {
+      loginCodes.send(account.email);
+    } catch {
+      // A code went out less than a minute ago: that one still works, don't send another.
+    }
+    return { two_factor_required: true };
+  }
   return writeSession({ ...account.user });
+}
+
+// The log in waiting for its two-factor code (stands in for Laravel's guest session).
+const PENDING_LOGIN_KEY = 'khameo.mockPendingLogin';
+
+function writePendingLogin(email) {
+  try {
+    if (email) sessionStorage.setItem(PENDING_LOGIN_KEY, email);
+    else sessionStorage.removeItem(PENDING_LOGIN_KEY);
+  } catch {
+    // Storage blocked: the log in has to be started again.
+  }
+}
+
+function requirePendingLogin() {
+  let email = null;
+  try {
+    email = sessionStorage.getItem(PENDING_LOGIN_KEY);
+  } catch {
+    // Same as no pending log in.
+  }
+  const account = email && findAccount(email);
+  if (!account) throw apiError(401, { message: 'Log in again.', code: 'login_expired' });
+  return account;
+}
+
+async function mockLoginTwoFactor({ code }) {
+  await wait(MOCK_DELAY_MS);
+
+  const account = requirePendingLogin();
+  // Codes live in memory: after a reload, behave as if one is still waiting.
+  if (!loginCodes.has(account.email)) loginCodes.send(account.email, { cooldown: 0 });
+  loginCodes.check(account.email, code);
+  writePendingLogin(null);
+  return writeSession({ ...account.user });
+}
+
+async function mockResendLoginCode() {
+  await wait(MOCK_DELAY_MS);
+
+  const account = requirePendingLogin();
+  return { message: 'We sent a new code.', ...loginCodes.send(account.email) };
 }
 
 async function mockRegister({ name, email, password, password_confirmation, confirmed_age, accepted_terms }) {
@@ -225,11 +234,10 @@ async function mockRegister({ name, email, password, password_confirmation, conf
 
   const now = new Date().toISOString();
   const user = {
+    ...blankUser,
     id: mockAccounts.length + 1,
     name: name.trim(),
     email: normalize(email),
-    email_verified_at: null,
-    onboarded_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -237,7 +245,7 @@ async function mockRegister({ name, email, password, password_confirmation, conf
   mockAccounts.push({ email: user.email, password, user });
   // Registering signs the user in (unverified).
   writeSession({ ...user });
-  return { user: { ...user }, verification: sendCode(user.email) };
+  return { user: { ...user }, verification: verificationCodes.send(user.email, { force: true }) };
 }
 
 async function mockVerifyEmail({ email, code }) {
@@ -246,33 +254,14 @@ async function mockVerifyEmail({ email, code }) {
   const key = normalize(email);
   // Opening the page directly (no sign-up this session) behaves as if a code is waiting.
   // We don't know when it was sent, so don't invent a resend cooldown.
-  if (!verificationByEmail.has(key)) sendCode(key, { cooldown: 0 });
-  const state = verificationByEmail.get(key);
+  if (!verificationCodes.has(key)) verificationCodes.send(key, { cooldown: 0 });
+  verificationCodes.check(key, code);
 
-  if (code === '000000' || Date.now() > state.expiresAt) {
-    throw validationError('This code has expired.', { code: ['This code has expired.'] }, { error: 'code_expired' });
-  }
-  if (state.attemptsLeft <= 0) {
-    throw validationError('Too many tries.', { code: ['Too many tries.'] }, { error: 'too_many_attempts', attempts_left: 0 });
-  }
-  if (code !== MOCK_VERIFY_CODE) {
-    state.attemptsLeft -= 1;
-    if (state.attemptsLeft <= 0) {
-      throw validationError('Too many tries.', { code: ['Too many tries.'] }, { error: 'too_many_attempts', attempts_left: 0 });
-    }
-    throw validationError(
-      'That code isn’t right.',
-      { code: ['That code isn’t right.'] },
-      { error: 'code_invalid', attempts_left: state.attemptsLeft },
-    );
-  }
-
-  verificationByEmail.delete(key);
   const verifiedAt = new Date().toISOString();
   const account = findAccount(key);
   if (account) account.user.email_verified_at = verifiedAt;
   // After a reload the account may only exist in the stored session; verify that copy instead.
-  const base = account?.user ?? readSession() ?? { id: 0, name: '', email: key, onboarded_at: null };
+  const base = account?.user ?? readSession() ?? { ...blankUser, email: key };
   const user = writeSession({ ...base, email_verified_at: verifiedAt });
   return { user };
 }
@@ -280,11 +269,7 @@ async function mockVerifyEmail({ email, code }) {
 async function mockResendCode({ email }) {
   await wait(MOCK_DELAY_MS);
 
-  const state = verificationByEmail.get(normalize(email));
-  if (state && Date.now() < state.resendAt) {
-    throw rateLimitError('Please wait before asking for another code.', Math.ceil((state.resendAt - Date.now()) / 1000));
-  }
-  return sendCode(email);
+  return verificationCodes.send(normalize(email));
 }
 
 async function mockForgotPassword({ email }) {
@@ -322,7 +307,5 @@ async function mockResetPassword({ token, email, password, password_confirmation
   if (Object.keys(errors).length > 0) throw validationError('The given data was invalid.', errors);
 
   if (account) account.password = password;
-  // Resetting signs the user in on this device.
-  const user = writeSession({ ...(account?.user ?? { id: 0, name: '', email: normalize(email), email_verified_at: null, onboarded_at: null }) });
-  return { user };
+  return { message: 'Your password is updated.' };
 }

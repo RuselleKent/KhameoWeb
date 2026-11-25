@@ -3,7 +3,7 @@ import { LoaderCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-xl font-semibold whitespace-nowrap ' +
+  'inline-flex items-center justify-center gap-2 rounded-xl font-semibold ' +
   'transition-colors duration-150 ' +
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ' +
   'disabled:pointer-events-none aria-busy:cursor-wait';
@@ -18,14 +18,24 @@ const variants = {
   // Same outline as secondary but with dark text (used by GoogleButton).
   neutral: `border border-line bg-white text-ink hover:bg-canvas ${fade}`,
   ghost: `text-ink hover:bg-ink/5 ${fade}`,
+  // Ghost with the brand colour ("Not now" on the consent screen).
+  ghostBrand: `text-brand hover:bg-brand/5 ${fade}`,
+  // Confirming a removal (ConfirmDialog).
+  danger: `bg-danger text-white hover:bg-danger/90 ${fade}`,
 };
 
 const sizes = {
-  sm: 'h-9 px-3.5 text-sm',
-  md: 'h-11 px-5 text-sm',
-  lg: 'h-13 px-6 text-base',
+  sm: 'whitespace-nowrap h-9 px-3.5 text-sm',
+  md: 'whitespace-nowrap h-11 px-5 text-sm',
+  lg: 'whitespace-nowrap h-13 px-6 text-base',
   // Full-width form button from the Figma auth screens: 52px tall, 15px label.
-  block: 'h-13 w-full px-4 text-[15px]',
+  block: 'whitespace-nowrap h-13 w-full px-4 text-[15px]',
+  // Same with the 17px label used on the onboarding steps.
+  blockLg: 'whitespace-nowrap h-13 w-full px-[22px] text-[17px]',
+  // blockLg that grows when its label needs two lines.
+  blockLgWrap: 'min-h-13 w-full px-[22px] py-2 text-[17px] leading-tight',
+  // Small text link-like button under a main action.
+  text: 'whitespace-nowrap h-8 px-2 text-sm',
 };
 
 /**

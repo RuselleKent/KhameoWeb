@@ -26,6 +26,8 @@
   --color-danger-line: #E41105;  /* border of a field with an error */
   --color-success: #1E7B45;      /* border of a field confirmed valid, strong password */
   --color-success-soft: #E3F4EA; /* background of success check badges */
+  --color-accent-soft: #FFF1E7;  /* badge behind an accent icon */
+  --color-brand-soft: #EAF4F2;   /* selected card */
   --color-brand-disabled: #BFD2D1; /* disabled primary button */
 
   /* Fonts: font-display for headings, font-sans (default) for body */

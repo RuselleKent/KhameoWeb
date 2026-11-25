@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Alert from '../../../components/ui/Alert';
 import Button from '../../../components/ui/Button';
 import Checkbox from '../../../components/ui/Checkbox';
@@ -33,6 +33,7 @@ function validate({ email, password }) {
 export default function LoginPage() {
   const { login } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
 
@@ -87,7 +88,11 @@ export default function LoginPage() {
     try {
       // Stores the user; RedirectIfAuthenticated then moves on to the page they came from,
       // /home, or whichever step is unfinished (verify email, onboarding).
-      await login({ email: email.trim(), password, remember });
+      const result = await login({ email: email.trim(), password, remember });
+      if (result.two_factor_required) {
+        // Keep `from` so the verify page can still return to the page they wanted.
+        navigate('/login/verify', { state: { email: email.trim(), from: location.state?.from } });
+      }
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
 
