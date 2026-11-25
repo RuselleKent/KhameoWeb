@@ -22,6 +22,7 @@ import ChoosePathPage from '../features/onboarding/pages/ChoosePathPage';
 import RequireNotSubmitted from '../features/onboarding/components/RequireNotSubmitted';
 import RequirePath from '../features/onboarding/components/RequirePath';
 import TourPage from '../features/onboarding/pages/TourPage';
+import RecordingConsentPage from '../features/onboarding/pages/RecordingConsentPage';
 import TwoFactorPage from '../features/onboarding/pages/TwoFactorPage';
 import GoalsPage from '../features/onboarding/pages/personal/GoalsPage';
 import ProfilePage from '../features/onboarding/pages/personal/ProfilePage';
@@ -185,6 +186,8 @@ export const router = createBrowserRouter([
             element: <RequireOnboarded />,
             children: [
               { path: 'home', element: <HomePage /> },
+              // Opened by record buttons when there is no recording consent (useRecordingGate).
+              { path: 'recording-consent', element: <RecordingConsentPage /> },
               // Apply (or reapply) as a Host later; the same pages as in onboarding.
               {
                 element: <HostApplicationRoot />,
