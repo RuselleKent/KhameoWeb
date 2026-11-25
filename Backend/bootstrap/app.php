@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\VerificationCodeException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,10 +14,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Lets the React app use cookie sessions on /api routes (Sanctum SPA auth)
+        $middleware->statefulApi();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // A wrong code is a normal answer, not an error worth logging
+        $exceptions->dontReport(VerificationCodeException::class);
     })->create();

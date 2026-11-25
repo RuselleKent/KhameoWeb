@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -43,6 +44,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'email_verified_at' => 'datetime',
+            'onboarded_at' => 'datetime',
             'terms_accepted_at' => 'datetime',
             'password' => 'hashed',      // automatically hashes passwords
             'is_admin' => 'boolean',
@@ -59,5 +61,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function canLogIn(): bool
     {
         return $this->account_status === self::STATUS_ACTIVE;
+    }
+
+    // The 6-digit code that confirms this user's email address
+    public function emailVerificationCode(): HasOne
+    {
+        return $this->hasOne(EmailVerificationCode::class);
     }
 }

@@ -2,7 +2,7 @@ import api, { getCsrfCookie } from '../../lib/api';
 import { mockAccounts } from '../../mockdata/user';
 
 // Flip to false once the endpoints in docs/api-auth.md are ready.
-const USE_MOCK = true;
+const USE_MOCK = false;
 const MOCK_DELAY_MS = 700;
 
 // ---- Requests ----------------------------------------------------------------
