@@ -12,6 +12,8 @@ import SignupPage from '../features/auth/pages/SignupPage';
 import VerifyEmailPage from '../features/auth/pages/VerifyEmailPage';
 import ForgotPasswordPage from '../features/auth/pages/ForgotPasswordPage';
 import ResetPasswordPage from '../features/auth/pages/ResetPasswordPage';
+import GoogleDonePage from '../features/auth/pages/GoogleDonePage';
+import { PrivacyPage, TermsPage } from '../features/legal/LegalPages';
 import HostApplicationRoot from '../features/onboarding/HostApplicationRoot';
 import OnboardingRoot from '../features/onboarding/OnboardingRoot';
 import OnboardingLayout from '../features/onboarding/components/OnboardingLayout';
@@ -20,6 +22,7 @@ import ChoosePathPage from '../features/onboarding/pages/ChoosePathPage';
 import RequireNotSubmitted from '../features/onboarding/components/RequireNotSubmitted';
 import RequirePath from '../features/onboarding/components/RequirePath';
 import TourPage from '../features/onboarding/pages/TourPage';
+import RecordingConsentPage from '../features/onboarding/pages/RecordingConsentPage';
 import TwoFactorPage from '../features/onboarding/pages/TwoFactorPage';
 import GoalsPage from '../features/onboarding/pages/personal/GoalsPage';
 import ProfilePage from '../features/onboarding/pages/personal/ProfilePage';
@@ -73,12 +76,18 @@ function invitePathRoutes(pathId, invitePage, profilePage, readyPage) {
 
 // Redirect rules: docs/api-auth.md → "Session and redirect rules".
 export const router = createBrowserRouter([
+  // The Google popup lands here (docs/api-auth.md section 9). Outside App, so the popup doesn't load
+  // the session or get redirected by the guards.
+  { path: '/auth/google/done', element: <GoogleDonePage />, errorElement: <ErrorPage /> },
   {
     path: '/',
     element: <App />,
     errorElement: <ErrorPage />,
     children: [
-      // Public: signed-in users are sent on to their next step (verify email, onboarding or /home).
+      // Open to everyone, signed in or not (linked from sign-up, which opens them in a new tab).
+      { path: 'terms', element: <TermsPage /> },
+      { path: 'privacy', element: <PrivacyPage /> },
+      // Public: signed-in users are sent on to their next step (verify email, consent, onboarding or /home).
       {
         element: <RedirectIfAuthenticated />,
         children: [
@@ -101,7 +110,8 @@ export const router = createBrowserRouter([
             element: <OnboardingRoot />,
             children: [
               // Full-page screens with the auth split panel.
-              { path: 'consent', element: <ConsentPage /> },
+              // Also asked again after onboarding when there's no consent (nextStepFor), so it stays open then.
+              { path: 'consent', element: <ConsentPage />, handle: { afterOnboarding: true } },
               { path: 'host/two-factor', element: <TwoFactorPage /> },
               {
                 element: <OnboardingLayout />,
@@ -176,6 +186,8 @@ export const router = createBrowserRouter([
             element: <RequireOnboarded />,
             children: [
               { path: 'home', element: <HomePage /> },
+              // Opened by record buttons when there is no recording consent (useRecordingGate).
+              { path: 'recording-consent', element: <RecordingConsentPage /> },
               // Apply (or reapply) as a Host later; the same pages as in onboarding.
               {
                 element: <HostApplicationRoot />,

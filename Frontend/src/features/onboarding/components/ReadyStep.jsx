@@ -7,6 +7,7 @@ import { getFieldErrors } from '../../../lib/apiErrors';
 import { cn } from '../../../lib/utils';
 import { completeOnboarding } from '../onboarding.api';
 import { isProfileComplete } from '../profileRules';
+import { toApiRoles } from '../roles';
 import { useOnboarding } from '../useOnboarding';
 
 const PROFILE_PREFIX = 'profile.';
@@ -61,7 +62,7 @@ export default function ReadyStep({
           display_name: profile.display_name.trim(),
           username: profile.username,
           bio: profile.bio.trim() || null,
-          occupation: profile.occupation.trim() || null,
+          roles: toApiRoles(profile.roles),
         },
       });
       setUser(saved);

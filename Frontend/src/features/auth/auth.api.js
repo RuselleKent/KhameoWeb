@@ -1,19 +1,32 @@
 import api, { getCsrfCookie } from '../../lib/api';
 import { createMockCodes } from '../../mockdata/mockCodes';
 import { apiError, rateLimitError, readSession, validationError, wait, writeSession } from '../../mockdata/mockServer';
-import { blankUser, mockAccounts } from '../../mockdata/user';
+import { blankUser, mockAccounts, mockUser } from '../../mockdata/user';
 
-// Flip to false once the endpoints in docs/api-auth.md are ready.
-const USE_MOCK = false;
+// ---- Mock switches -----------------------------------------------------------
+// Every endpoint below is real (Laravel). USE_MOCK = true mocks them all, for working without Laravel.
+export const USE_MOCK = false;
+
+// Waits for: GET /auth/google/redirect and /auth/google/callback (Russel).
+// While true there is no popup: the result comes after 1.5s, chosen with the dev-only picker.
+export const GOOGLE_USE_MOCK = true;
+
+/** True when the code on /login/verify is the mock one (123456), for the dev-only hint. */
+export const LOGIN_CODE_IS_MOCK = USE_MOCK;
+
 const MOCK_DELAY_MS = 700;
+const GOOGLE_MOCK_DELAY_MS = 1500;
 
 // ---- Requests ----------------------------------------------------------------
 // Every function resolves with the response body. Failures reject with the axios error;
 // read them with getFieldErrors() / getErrorInfo() below. Shapes: docs/api-auth.md.
 
 /**
- * POST /api/login → user, or { two_factor_required: true } when two-factor is on (no session yet;
- * a code was emailed, see loginTwoFactor). 422: errors.email (no account) or errors.password.
+ * POST /api/login → { two_factor_required: true, email, expires_in, resend_in }: a verified account gets a
+ * 6-digit code by email and nobody is signed in until loginTwoFactor. An unverified account is signed in
+ * right away and the user object comes back (the app then goes to /verify-email).
+ * 422: errors.email (no account) or errors.password. 403: the account can't log in (locked).
+ * 429: retry_after (5 failed tries).
  */
 export async function login({ email, password, remember = false }) {
   if (USE_MOCK) return mockLogin({ email, password });
@@ -24,7 +37,7 @@ export async function login({ email, password, remember = false }) {
 }
 
 /**
- * POST /api/login/two-factor → user. Finishes a log in that answered two_factor_required.
+ * POST /api/login/two-factor → user. Finishes a log in.
  * 422 code: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
  * 401 code: 'login_expired' (start again at /login)
  */
@@ -43,6 +56,15 @@ export async function resendLoginCode() {
   await getCsrfCookie();
   const { data } = await api.post('/api/login/two-factor/resend');
   return data;
+}
+
+/**
+ * Gives up a log in waiting for its code ("Back to log in" on /login/verify). Never fails.
+ * Nothing to call on the real API: the waiting log in sits in the guest session and expires after 15 minutes,
+ * and logging in again replaces it.
+ */
+export async function cancelLogin() {
+  if (USE_MOCK) writePendingLogin(null);
 }
 
 /**
@@ -79,6 +101,19 @@ export async function resendVerificationCode({ email }) {
   return data;
 }
 
+/**
+ * POST /api/email/change → { user, verification: { expires_in, resend_in } }. Only before the email is
+ * verified: swaps the address and emails a new code to it (the old code stops working).
+ * 422: errors.email ("This email is already registered.", format, same as now). 403 code: 'already_verified'.
+ */
+export async function changeEmail({ email }) {
+  if (USE_MOCK) return mockChangeEmail({ email });
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/email/change', { email });
+  return data;
+}
+
 /** POST /api/forgot-password → { message }. Always succeeds for a valid email. 429: retry_after. */
 export async function forgotPassword({ email }) {
   if (USE_MOCK) return mockForgotPassword({ email });
@@ -89,9 +124,9 @@ export async function forgotPassword({ email }) {
 }
 
 /**
- * POST /api/reset-password → { message }. Does not start a session: the user logs in next (2FA applies).
+ * POST /api/reset-password → { message }. Does not start a session: the user logs in next (with a code).
  * Payload: { token, email, password, password_confirmation }
- * 422: errors.token (link expired or invalid) or errors.password.
+ * 422: errors.token or errors.email (link expired or invalid), errors.password, errors.password_confirmation.
  */
 export async function resetPassword(payload) {
   if (USE_MOCK) return mockResetPassword(payload);
@@ -106,6 +141,11 @@ export async function getUser() {
   if (USE_MOCK) return mockGetUser();
 
   const { data } = await api.get('/api/user');
+  // A 200 that isn't a user (an HTML error page, a misrouted proxy) must not count as signed in:
+  // AuthProvider then shows "We couldn't load Khameo" with Retry.
+  if (!data || typeof data !== 'object' || !('id' in data)) {
+    throw new Error('GET /api/user did not return a user.');
+  }
   return data;
 }
 
@@ -117,6 +157,72 @@ export async function logout() {
   await api.post('/api/logout');
 }
 
+// ---- Google sign-in (docs/api-auth.md section 9) -----------------------------
+
+/** Results the popup reports back from /auth/google/done?status=… */
+export const GOOGLE_STATUSES = ['success', 'cancelled', 'not_registered', 'already_in_use'];
+
+/**
+ * Where the Google popup opens: Laravel's redirect to Google.
+ * intent 'signup' also says the user ticked the 18+ and Terms boxes.
+ */
+export function googleRedirectUrl({ intent }) {
+  const params = new URLSearchParams({ intent });
+  if (intent === 'signup') {
+    params.set('confirmed_age', '1');
+    params.set('accepted_terms', '1');
+  }
+  return `${import.meta.env.VITE_API_URL ?? ''}/auth/google/redirect?${params}`;
+}
+
+// Mock results for the dev-only picker: the four statuses, plus a returning user that is all set up.
+export const GOOGLE_MOCK_OPTIONS = [
+  { value: 'success', label: 'success (new user)' },
+  { value: 'success_returning', label: 'success (returning user)' },
+  { value: 'cancelled', label: 'cancelled' },
+  { value: 'not_registered', label: 'not_registered' },
+  { value: 'already_in_use', label: 'already_in_use' },
+];
+let googleMockChoice = 'success';
+export const getGoogleMockChoice = () => googleMockChoice;
+export const setGoogleMockChoice = (value) => {
+  googleMockChoice = value;
+};
+
+/**
+ * Mock of the whole popup round trip → { status, email, user }. `user` is only set on success
+ * (the real flow gets it with getUser() once the popup reports success).
+ */
+export async function mockGoogleSignIn() {
+  await wait(GOOGLE_MOCK_DELAY_MS);
+
+  const choice = googleMockChoice;
+  if (choice === 'success' || choice === 'success_returning') {
+    const now = new Date().toISOString();
+    const user =
+      choice === 'success'
+        ? {
+            // A new Google account: verified by Google, no consent or onboarding yet.
+            ...blankUser,
+            id: 9001,
+            name: 'Jane Cruz',
+            email: 'jane.google@gmail.com',
+            email_verified_at: now,
+            created_at: now,
+            updated_at: now,
+          }
+        : { ...mockUser };
+    // Mock auth keeps it signed in across reloads; on the real API it lasts until a reload.
+    if (USE_MOCK) writeSession(user);
+    return { status: 'success', email: user.email, user };
+  }
+  return {
+    status: choice,
+    email: choice === 'already_in_use' ? 'jane.cruz@gmail.com' : 'jane.new@gmail.com',
+    user: null,
+  };
+}
+
 // ---- Error helpers -----------------------------------------------------------
 
 export { getErrorInfo, getFieldErrors } from '../../lib/apiErrors';
@@ -124,17 +230,22 @@ export { getErrorInfo, getFieldErrors } from '../../lib/apiErrors';
 // ---- Mock --------------------------------------------------------------------
 // Mock rules (handy for testing):
 //   codes            see mockdata/mockCodes.js (123456 is correct)
-//   two-factor       maria.santos@example.com has it on: logging in asks for a code
+//   log in           every account gets a code at /login/verify
+//   locked           locked.account@example.com answers 403; 5 wrong passwords in a row answer 429
+//   email change     any free address; an address another account uses is a 422
 //   reset link       one request per email every 5 minutes, then 429
 //   reset token      "expired" (or empty) is rejected; your current password is rejected
 //   session          the signed-in user is kept in localStorage (stands in for the session cookie),
 //                    so a reload stays signed in. Accounts created by sign-up live in memory only.
 
 const RESET_LINK_COOLDOWN_SECONDS = 300;
+const MAX_FAILED_LOGINS = 5;
+const LOGIN_LOCKOUT_SECONDS = 900;
 
 const verificationCodes = createMockCodes();
 const loginCodes = createMockCodes();
 const resetRequestedAt = new Map(); // email → timestamp
+const failedLogins = new Map(); // email → { count, lockedUntil }
 
 const normalize = (email) => email.trim().toLowerCase();
 const findAccount = (email) => mockAccounts.find((a) => a.email.toLowerCase() === normalize(email));
@@ -154,6 +265,12 @@ async function mockLogout() {
 async function mockLogin({ email, password }) {
   await wait(MOCK_DELAY_MS);
 
+  const key = normalize(email);
+  const failures = failedLogins.get(key);
+  if (failures?.lockedUntil > Date.now()) {
+    throw rateLimitError('Too many requests.', Math.ceil((failures.lockedUntil - Date.now()) / 1000));
+  }
+
   const account = findAccount(email);
   if (!account) {
     throw validationError('No account found', {
@@ -161,23 +278,23 @@ async function mockLogin({ email, password }) {
     });
   }
   if (account.password !== password) {
+    const count = (failures?.count ?? 0) + 1;
+    failedLogins.set(key, {
+      count: count >= MAX_FAILED_LOGINS ? 0 : count,
+      lockedUntil: count >= MAX_FAILED_LOGINS ? Date.now() + LOGIN_LOCKOUT_SECONDS * 1000 : 0,
+    });
     throw validationError('Wrong password', {
       password: ['That password isn’t right. Try again, or reset it.'],
     });
   }
-  if (account.user.two_factor_confirmed_at) {
-    writePendingLogin(account.email);
-    try {
-      loginCodes.send(account.email);
-    } catch {
-      // A code went out less than a minute ago: that one still works, don't send another.
-    }
-    return { two_factor_required: true };
-  }
-  return writeSession({ ...account.user });
+  failedLogins.delete(key);
+  if (account.locked) throw apiError(403, { message: 'This account can’t log in.' });
+
+  writePendingLogin(account.email);
+  return { two_factor_required: true, ...loginCodes.send(account.email, { force: true }) };
 }
 
-// The log in waiting for its two-factor code (stands in for Laravel's guest session).
+// The log in waiting for its code (stands in for Laravel's guest session).
 const PENDING_LOGIN_KEY = 'khameo.mockPendingLogin';
 
 function writePendingLogin(email) {
@@ -235,7 +352,7 @@ async function mockRegister({ name, email, password, password_confirmation, conf
   const now = new Date().toISOString();
   const user = {
     ...blankUser,
-    id: mockAccounts.length + 1,
+    id: mockAccounts.length + 100,
     name: name.trim(),
     email: normalize(email),
     created_at: now,
@@ -270,6 +387,31 @@ async function mockResendCode({ email }) {
   await wait(MOCK_DELAY_MS);
 
   return verificationCodes.send(normalize(email));
+}
+
+async function mockChangeEmail({ email = '' }) {
+  await wait(MOCK_DELAY_MS);
+
+  const current = readSession();
+  if (!current) throw apiError(401, { message: 'Unauthenticated.' });
+  const key = normalize(email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key)) {
+    throw validationError('The given data was invalid.', { email: ['Enter a valid email address.'] });
+  }
+  if (key === current.email) {
+    throw validationError('The given data was invalid.', { email: ['That’s already your email.'] });
+  }
+  if (findAccount(key)) {
+    throw validationError('The given data was invalid.', { email: ['This email is already registered.'] });
+  }
+
+  const account = findAccount(current.email);
+  if (account) {
+    account.email = key;
+    account.user.email = key;
+  }
+  const user = writeSession({ ...current, email: key, updated_at: new Date().toISOString() });
+  return { user, verification: verificationCodes.send(key, { force: true }) };
 }
 
 async function mockForgotPassword({ email }) {

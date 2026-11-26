@@ -1,6 +1,5 @@
 // Helpers shared by the mock APIs (auth.api.js, onboarding.api.js).
 // Errors look like axios errors in Laravel's shapes, so pages can't tell mock from real.
-import { mockAccounts } from './user';
 
 export function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,7 +14,9 @@ export function apiError(status, data) {
 export const validationError = (message, errors, extra = {}) => apiError(422, { message, errors, ...extra });
 export const rateLimitError = (message, retryAfter) => apiError(429, { message, retry_after: retryAfter });
 
-// The signed-in user lives in localStorage (stands in for the session cookie), so a reload stays signed in.
+// Mock auth only (auth.api.js with USE_MOCK): the signed-in user lives in localStorage (stands in for
+// the session cookie), so a reload stays signed in. The onboarding mocks don't read this; they use the
+// AuthProvider user (mockUserStore.js).
 const SESSION_KEY = 'khameo.mockSession';
 
 export function readSession() {
@@ -35,19 +36,4 @@ export function writeSession(user) {
     // Storage blocked (private mode etc.): the session just won't survive a reload.
   }
   return user;
-}
-
-/** The signed-in user, or a 401 like the real API. */
-export function requireSession() {
-  const user = readSession();
-  if (!user) throw apiError(401, { message: 'Unauthenticated.' });
-  return user;
-}
-
-/** Change the signed-in user, in the session and in the mock "database" (until a reload). */
-export function updateSessionUser(changes) {
-  const user = { ...requireSession(), ...changes, updated_at: new Date().toISOString() };
-  const account = mockAccounts.find((a) => a.user.email === user.email);
-  if (account) Object.assign(account.user, user);
-  return writeSession(user);
 }

@@ -1,18 +1,32 @@
 import { useRef, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import Alert from '../../../components/ui/Alert';
 import Button from '../../../components/ui/Button';
 import CodeInput from '../../../components/ui/CodeInput';
+import ConfirmDialog from '../../../components/ui/ConfirmDialog';
 import FieldError from '../../../components/ui/FieldError';
+import Input from '../../../components/ui/Input';
 import { formatDuration, useCountdown } from '../../../lib/useCountdown';
 import AuthLayout from '../components/AuthLayout';
 import AuthSuccess from '../components/AuthSuccess';
+import StepDots from '../components/StepDots';
 import { useAuth } from '../../../hooks/useAuth';
-import { getErrorInfo, resendVerificationCode, verifyEmail } from '../auth.api';
+import { changeEmail, getErrorInfo, getFieldErrors, resendVerificationCode, verifyEmail } from '../auth.api';
 
-// Used when the page is opened without timers from sign-up (e.g. after a reload).
-const DEFAULT_TIMERS = { expires_in: 600, resend_in: 60 };
+/**
+ * Seconds left on sign-up's timers ({ expires_in, resend_in, sent_at }), counted from when the code was sent,
+ * so a reload doesn't restart them. null when the page doesn't know (opened after logging in, say).
+ */
+function remainingTimers(verification) {
+  if (!verification) return null;
+  const elapsed = verification.sent_at ? Math.floor((Date.now() - verification.sent_at) / 1000) : 0;
+  return {
+    expires_in: Math.max(0, verification.expires_in - elapsed),
+    resend_in: Math.max(0, verification.resend_in - elapsed),
+  };
+}
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const linkClass = 'font-bold text-brand underline underline-offset-2 hover:text-brand-dark';
 const backLinkClass =
   'w-fit rounded text-sm font-semibold text-brand hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
@@ -28,39 +42,132 @@ const LOCKED_COPY = {
   },
 };
 
-function StepDots() {
+/**
+ * "Wrong email? Change it": a new address and Save, on this page (POST /api/email/change).
+ * `onChanged(result)` gets { user, verification }; `onCancel` closes the form.
+ */
+function ChangeEmailForm({ currentEmail, onChanged, onCancel }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState(null);
+  // null | 'unavailable' | 'throttled' | 'generic'
+  const [notice, setNotice] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (saving) return;
+
+    const email = value.trim();
+    let clientError = null;
+    if (!email) clientError = 'Enter your new email.';
+    else if (!EMAIL_PATTERN.test(email)) clientError = 'Enter a valid email address.';
+    else if (email.toLowerCase() === currentEmail.toLowerCase()) clientError = 'That’s already your email.';
+    if (clientError) {
+      setError(clientError);
+      inputRef.current?.focus();
+      return;
+    }
+
+    setSaving(true);
+    setNotice(null);
+    try {
+      onChanged(await changeEmail({ email }));
+    } catch (err) {
+      const fieldErrors = getFieldErrors(err);
+      const { status } = getErrorInfo(err);
+      if (fieldErrors.email) {
+        // e.g. "This email is already registered."
+        setError(fieldErrors.email);
+        inputRef.current?.focus();
+      } else if (status === 404) {
+        setNotice('unavailable');
+      } else if (status === 429) {
+        setNotice('throttled');
+      } else {
+        setNotice('generic');
+      }
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="flex justify-center gap-1.5">
-      <span aria-hidden="true" className="h-1.5 w-6 rounded-full bg-brand" />
-      <span aria-hidden="true" className="size-1.5 rounded-full bg-field" />
-      <span aria-hidden="true" className="size-1.5 rounded-full bg-field" />
-      <span className="sr-only">Step 1 of 3</span>
-    </div>
+    <form noValidate onSubmit={handleSave} className="mt-5 flex flex-col gap-4 rounded-xl border border-divider p-4">
+      <Input
+        ref={inputRef}
+        label="New email"
+        type="email"
+        inputMode="email"
+        autoComplete="email"
+        placeholder="you@example.com"
+        autoFocus
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setError(null);
+        }}
+        error={error}
+      />
+      {notice === 'unavailable' && (
+        <Alert variant="error" icon={false} title="Can’t change it yet">
+          Changing your email isn’t available yet. Go back and create your account again with the right email.
+        </Alert>
+      )}
+      {notice === 'throttled' && (
+        <Alert variant="warning" icon={false} title="Too many changes">
+          Wait a minute, then try again.
+        </Alert>
+      )}
+      {notice === 'generic' && (
+        <Alert variant="error" icon={false} title="Couldn’t change your email">
+          Something went wrong on our side. Check your connection and try again.
+        </Alert>
+      )}
+      <div className="flex gap-3">
+        <Button variant="secondary" size="block" className="flex-1" disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" size="block" className="flex-1" loading={saving} loadingText="Saving…">
+          Save
+        </Button>
+      </div>
+    </form>
   );
 }
 
 export default function VerifyEmailPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
   // Sign-up passes the email; after a reload (or a login before verifying) it comes from the session.
-  const email = location.state?.email ?? user?.email ?? searchParams.get('email') ?? '';
-  const timers = location.state?.verification ?? DEFAULT_TIMERS;
+  // "Change it" replaces it.
+  // The signed-in user wins over the location state, which still has the old address after "Change it" + reload.
+  const [email, setEmail] = useState(
+    () => user?.email ?? location.state?.email ?? searchParams.get('email') ?? '',
+  );
+  // Without known timers (opened after logging in, or a code sent long ago) don't invent a countdown:
+  // "Send a new code" is available and the server says if it's too soon.
+  const [initialTimers] = useState(() => remainingTimers(location.state?.verification));
+  const [timersKnown, setTimersKnown] = useState(Boolean(initialTimers));
+  const [changing, setChanging] = useState(false);
+  const [confirmBack, setConfirmBack] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const codeRef = useRef(null);
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState(null);
   // null | 'expired' | 'tooManyTries' — set by the server; the expiry countdown can also expire it.
   const [locked, setLocked] = useState(null);
-  // null | 'generic' | 'resent'
+  // null | 'generic' | 'resent' | 'changed'
   const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [verifiedUser, setVerifiedUser] = useState(null);
-  const [expiresIn, restartExpiry] = useCountdown(timers.expires_in);
-  const [resendIn, restartResend] = useCountdown(timers.resend_in);
+  const [expiresIn, restartExpiry] = useCountdown(initialTimers?.expires_in ?? 0);
+  const [resendIn, restartResend] = useCountdown(initialTimers?.resend_in ?? 0);
 
-  const lockReason = locked ?? (expiresIn === 0 ? 'expired' : null);
+  const lockReason = locked ?? (timersKnown && expiresIn === 0 ? 'expired' : null);
   const complete = /^\d{6}$/.test(code);
 
   function handleCodeChange(next) {
@@ -101,6 +208,7 @@ export default function VerifyEmailPage() {
     setNotice(null);
     try {
       const next = await resendVerificationCode({ email });
+      setTimersKnown(true);
       restartExpiry(next.expires_in);
       restartResend(next.resend_in);
       setCode('');
@@ -116,6 +224,27 @@ export default function VerifyEmailPage() {
     } finally {
       setResending(false);
     }
+  }
+
+  function handleEmailChanged({ user: changed, verification }) {
+    setEmail(changed.email);
+    setUser(changed);
+    setTimersKnown(true);
+    restartExpiry(verification.expires_in);
+    restartResend(verification.resend_in);
+    setCode('');
+    setCodeError(null);
+    setLocked(null);
+    setChanging(false);
+    setNotice('changed');
+    requestAnimationFrame(() => codeRef.current?.querySelector('input')?.focus());
+  }
+
+  // "← Back": logging out is the only way back from here, so ask first.
+  async function handleLeave() {
+    setLeaving(true);
+    await logout();
+    navigate('/welcome', { replace: true });
   }
 
   if (verifiedUser) {
@@ -166,9 +295,22 @@ export default function VerifyEmailPage() {
     <AuthLayout>
       <title>Verify your email · Khameo</title>
 
-      <Link to="/signup" className={backLinkClass}>
+      <button type="button" onClick={() => setConfirmBack(true)} className={backLinkClass}>
         ← Back
-      </Link>
+      </button>
+      <ConfirmDialog
+        open={confirmBack}
+        title="Go back?"
+        confirmLabel="Log out"
+        cancelLabel="Stay here"
+        variant="primary"
+        loading={leaving}
+        loadingText="Logging out…"
+        onConfirm={handleLeave}
+        onCancel={() => setConfirmBack(false)}
+      >
+        You’ll be logged out and can finish verifying later by logging in.
+      </ConfirmDialog>
       <h1 className="mt-8 text-[32px] leading-[38px] text-ink">Check your email</h1>
       <p className="mt-2 text-sm text-muted">
         We sent a 6-digit code to <span className="font-bold text-ink">{email}</span>.
@@ -184,8 +326,13 @@ export default function VerifyEmailPage() {
           Check your connection and try again.
         </Alert>
       )}
+      {notice === 'changed' && (
+        <Alert variant="success" title="Email changed" className="mt-5">
+          We sent a new code to {email}. Codes sent to your old address no longer work.
+        </Alert>
+      )}
       <p aria-live="polite" className="sr-only">
-        {notice === 'resent' ? `We sent a new code to ${email}.` : ''}
+        {notice === 'resent' && `We sent a new code to ${email}.`}
       </p>
 
       <form noValidate onSubmit={handleVerify} className={lockReason ? 'mt-[18px]' : 'mt-5'}>
@@ -213,7 +360,11 @@ export default function VerifyEmailPage() {
           ) : (
             <>
               <div id="code-status" className="mt-5 flex justify-between gap-4 text-[13px] leading-[15px] text-muted">
-                <p>Code expires in {formatDuration(expiresIn, { padMinutes: true })}</p>
+                <p>
+                  {timersKnown
+                    ? `Code expires in ${formatDuration(expiresIn, { padMinutes: true })}`
+                    : 'Codes last 10 minutes.'}
+                </p>
                 {resendControl}
               </div>
               <p className="mt-[18px] text-[13px] leading-[15px] text-muted">
@@ -247,12 +398,16 @@ export default function VerifyEmailPage() {
         )}
       </form>
 
-      <p className="mt-[18px] text-center text-sm text-muted">
-        Wrong email?{' '}
-        <Link to="/signup" state={{ email }} className={linkClass}>
-          Change it
-        </Link>
-      </p>
+      {changing ? (
+        <ChangeEmailForm currentEmail={email} onChanged={handleEmailChanged} onCancel={() => setChanging(false)} />
+      ) : (
+        <p className="mt-[18px] text-center text-sm text-muted">
+          Wrong email?{' '}
+          <button type="button" onClick={() => setChanging(true)} className={linkClass}>
+            Change it
+          </button>
+        </p>
+      )}
     </AuthLayout>
   );
 }

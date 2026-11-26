@@ -4,18 +4,18 @@ import { nextStepFor } from './authRedirect';
 
 /**
  * Wraps the public routes (landing, welcome, login, sign-up, verify email, forgot/reset password).
- * Signed out → show the page. Signed in → send the user to their next step instead:
+ * Signed out → show the page. Signed in → send the user to their next step instead (authRedirect.js):
  * - not verified → /verify-email (that page itself stays reachable, sign-up lands there signed in)
- * - not onboarded → /onboarding
+ * - no consent → /onboarding/consent, not onboarded → /onboarding
  * - done → the page they were trying to reach before logging in, or /home
  */
 export default function RedirectIfAuthenticated() {
-  const { user } = useAuth();
+  const { user, consentSkipped } = useAuth();
   const location = useLocation();
 
   if (!user) return <Outlet />;
 
-  const next = nextStepFor(user);
+  const next = nextStepFor(user, { consentSkipped });
   if (next === '/verify-email') {
     return location.pathname === '/verify-email' ? (
       <Outlet />

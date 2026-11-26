@@ -13,7 +13,7 @@ export const blankUser = {
   display_name: null,
   username: null,
   bio: null,
-  occupation: null,
+  roles: [], // speaking roles: [{ name, audiences: [...] }], not group roles
   avatar_url: null,
   two_factor_confirmed_at: null,
   host_status: 'none', // none | pending | verified | rejected
@@ -33,7 +33,7 @@ export const mockUser = {
   onboarding_path: 'personal',
   display_name: 'Jane Cruz',
   username: 'jane_cruz',
-  occupation: 'Student',
+  roles: [{ name: 'Student', audiences: ['Classmates', 'Thesis Panel'] }],
   created_at: '2026-11-20T08:00:00.000000Z',
   updated_at: '2026-11-20T08:00:00.000000Z',
 };
@@ -62,7 +62,7 @@ const mockHost = {
   onboarding_path: 'host',
   display_name: 'Maria Santos',
   username: 'maria_santos',
-  occupation: 'Teacher or faculty',
+  roles: [{ name: 'Teacher or faculty', audiences: ['Students', 'Fellow Faculty'] }],
   two_factor_confirmed_at: '2026-11-19T08:08:00.000000Z',
   host_status: 'verified',
   created_at: '2026-11-19T08:00:00.000000Z',
@@ -80,21 +80,34 @@ const mockRejectedHost = {
   onboarding_path: 'host',
   display_name: 'Paolo Reyes',
   username: 'paolo_reyes',
-  occupation: 'Teacher or faculty',
+  roles: [{ name: 'Teacher or faculty', audiences: ['Students', 'Fellow Faculty'] }],
   two_factor_confirmed_at: '2026-11-18T08:08:00.000000Z',
   host_status: 'rejected',
   created_at: '2026-11-18T08:00:00.000000Z',
   updated_at: '2026-11-20T08:00:00.000000Z',
 };
 
-// Login credentials for the mock API only (Jane: verified + onboarded → /home;
-// Juan: verified, not onboarded → /onboarding; Maria and Paolo: two-factor, then /home).
+// An account Laravel won't let log in (account_status isn't active): log in answers 403.
+const mockLockedUser = {
+  ...blankUser,
+  id: 12,
+  name: 'Lara Locked',
+  email: 'locked.account@example.com',
+  email_verified_at: '2026-11-18T08:00:00.000000Z',
+  created_at: '2026-11-18T08:00:00.000000Z',
+  updated_at: '2026-11-18T08:00:00.000000Z',
+};
+
+// Login credentials for the mock API only. Every log in asks for an emailed code (123456) first.
+// Jane: verified + onboarded → /home; Juan: verified, no consent → /onboarding/consent;
+// Maria and Paolo: Hosts → /home; Lara: locked (403).
 // The password is never part of a user object; auth.api.js returns `user` on success.
 export const mockAccounts = [
   { email: mockUser.email, password: 'Password123', user: mockUser },
   { email: mockCoach.email, password: 'Password123', user: mockCoach },
   { email: mockHost.email, password: 'Password123', user: mockHost },
   { email: mockRejectedHost.email, password: 'Password123', user: mockRejectedHost },
+  { email: mockLockedUser.email, password: 'Password123', user: mockLockedUser, locked: true },
 ];
 
 export default mockUser;

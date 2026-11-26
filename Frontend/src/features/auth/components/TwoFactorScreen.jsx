@@ -2,8 +2,11 @@ import { Link } from 'react-router-dom';
 import shieldIcon from '../../../assets/icon-shield.svg';
 import AuthLayout from './AuthLayout';
 
-/** Frame of the two-factor screens (Figma 1.6): back link, shield badge, title, text, then children. */
-export default function TwoFactorScreen({ backTo, backState, backLabel = 'Back', title, description, children }) {
+/**
+ * Frame of the two-factor screens (Figma 1.6): back link, shield badge, title, text, then children.
+ * `onBack` runs when the back link is clicked (before it navigates).
+ */
+export default function TwoFactorScreen({ backTo, backState, backLabel = 'Back', onBack, title, description, children }) {
   return (
     <AuthLayout>
       <title>Two-factor · Khameo</title>
@@ -12,6 +15,7 @@ export default function TwoFactorScreen({ backTo, backState, backLabel = 'Back',
         <Link
           to={backTo}
           state={backState}
+          onClick={onBack}
           className="w-fit rounded text-[13px] leading-[1.5] font-semibold text-brand hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           ← {backLabel}

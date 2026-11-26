@@ -6,7 +6,7 @@ use Exception;
 use Illuminate\Http\JsonResponse;
 
 /**
- * A verification code was rejected. Renders the 422 body from docs/api-auth.md (section 3).
+ * A verification or log in code was rejected. Renders the 422 body from docs/api-auth.md (section 3).
  */
 class VerificationCodeException extends Exception
 {
@@ -38,7 +38,8 @@ class VerificationCodeException extends Exception
         $body = [
             'message' => $this->getMessage(),
             'errors' => ['code' => [$this->getMessage()]],
-            'error' => $this->errorCode,
+            // Machine-readable reason; the contract (docs/api-auth.md, rev 5) calls it `code`
+            'code' => $this->errorCode,
         ];
 
         if ($this->attemptsLeft !== null) {

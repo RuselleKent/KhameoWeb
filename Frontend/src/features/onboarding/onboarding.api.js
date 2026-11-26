@@ -1,14 +1,17 @@
 import api, { getCsrfCookie } from '../../lib/api';
 import { createMockCodes } from '../../mockdata/mockCodes';
-import { apiError, requireSession, updateSessionUser, validationError, wait } from '../../mockdata/mockServer';
+import { apiError, validationError, wait } from '../../mockdata/mockServer';
+import { connectMockUser, requireUser, updateUser, withMockFields } from '../../mockdata/mockUserStore';
 import {
   CONSENT_VERSION,
+  mockAiAudiences,
   mockHostApplications,
   mockInvites,
   ONBOARDING_GOALS,
   ONBOARDING_PATHS,
 } from '../../mockdata/onboarding';
 import { mockAccounts } from '../../mockdata/user';
+import { MAX_AUDIENCE_NAME, MAX_CHECKED_AUDIENCES, MAX_ROLE_NAME, MAX_ROLES } from './audiences';
 import { MAX_GOALS } from './goals';
 import { HOST_MESSAGES, isValidProof, isValidProofLink, schoolEmailError } from './hostRules';
 import {
@@ -16,19 +19,41 @@ import {
   MAX_AVATAR_BYTES,
   MAX_BIO,
   MAX_DISPLAY_NAME,
-  MAX_OCCUPATION,
   MESSAGES,
   USERNAME_PATTERN,
 } from './profileRules';
+import { sameName } from './roles';
 
-// Flip to false once the endpoints in docs/api-onboarding.md are ready.
-const USE_MOCK = true;
+// Real (Laravel): consent, avatar, username check, finish onboarding. Set USE_MOCK = true to mock them
+// too (no Laravel needed).
+const USE_MOCK = false;
+// Waits for: the Groups module (Russel): invites, joining groups, two-factor setup, school email and
+// host applications (host path).
+const GROUPS_AND_HOSTS_USE_MOCK = true;
+// Waits for: POST /api/ai/suggest-audiences. The profile step shows the button as "Soon" and doesn't call it.
+const AI_USE_MOCK = true;
 const MOCK_DELAY_MS = 700;
+
+// ---- Mock wiring (AuthProvider) ----------------------------------------------
+// The mocks read and change the signed-in user from AuthProvider (see mockdata/mockUserStore.js).
+// Both are no-ops once nothing is mocked.
+
+/** AuthProvider calls this once with a reader for the current user and its setUser. */
+export function connectOnboardingMock(getUser, setUser) {
+  if (USE_MOCK || GROUPS_AND_HOSTS_USE_MOCK) connectMockUser(getUser, setUser);
+}
+
+/** Puts back the fields the mocks saved for this account (the real API doesn't store them yet). */
+export function withMockOnboardingFields(user) {
+  return USE_MOCK || GROUPS_AND_HOSTS_USE_MOCK ? withMockFields(user) : user;
+}
 
 // ---- Requests ----------------------------------------------------------------
 // Every function resolves with the response body and rejects with the axios error.
 
-/** PATCH /api/user/consent → user with recording_consent_at and consent_version. false withdraws consent. */
+/**
+ * PATCH /api/user/consent → user with recording_consent_at and consent_version. false withdraws consent.
+ */
 export async function saveConsent({ recording_consent }) {
   if (USE_MOCK) return mockSaveConsent({ recording_consent });
 
@@ -37,7 +62,9 @@ export async function saveConsent({ recording_consent }) {
   return data;
 }
 
-/** POST /api/user/avatar (multipart) → { avatar_url }. `avatar` is a File. 422: errors.avatar. */
+/**
+ * POST /api/user/avatar (multipart) → { avatar_url }. `avatar` is a File. 422: errors.avatar.
+ */
 export async function uploadAvatar({ avatar }) {
   if (USE_MOCK) return mockUploadAvatar({ avatar });
 
@@ -48,7 +75,9 @@ export async function uploadAvatar({ avatar }) {
   return data;
 }
 
-/** DELETE /api/user/avatar → { avatar_url: null }. */
+/**
+ * DELETE /api/user/avatar → { avatar_url: null }.
+ */
 export async function removeAvatar() {
   if (USE_MOCK) return mockRemoveAvatar();
 
@@ -70,7 +99,7 @@ export async function checkUsername({ username, signal }) {
 
 /**
  * PATCH /api/user/onboarding → user with onboarded_at and onboarding_path.
- * profile: { display_name, username, bio, occupation } (the photo goes through uploadAvatar)
+ * profile: { display_name, username, bio, roles: [{ name, audiences: [...] }] } (the photo goes through uploadAvatar)
  * 422: errors.path, errors.goals, errors['profile.username'], …
  */
 export async function completeOnboarding({ path, goals, profile }) {
@@ -81,9 +110,24 @@ export async function completeOnboarding({ path, goals, profile }) {
   return data;
 }
 
-/** GET /api/invites/{code} → { code, type: 'group' | 'coach', role, group, … }. 404: no such code. */
+/**
+ * POST /api/ai/suggest-audiences → { audiences: [...] } for a speaking role, none of them in existing_audiences.
+ * 503 code: 'ai_unavailable'. 429: retry_after (10 a minute).
+ */
+export async function suggestAudiences({ role, existing_audiences }) {
+  if (AI_USE_MOCK) return mockSuggestAudiences({ role, existing_audiences });
+
+  await getCsrfCookie();
+  const { data } = await api.post('/api/ai/suggest-audiences', { role, existing_audiences });
+  return data;
+}
+
+/**
+ * GET /api/invites/{code} → { code, type: 'group' | 'coach', role, group, … }. 404: no such code.
+ * Waits for: GET /api/invites/{code}
+ */
 export async function getInvite(code) {
-  if (USE_MOCK) return mockGetInvite(code);
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockGetInvite(code);
 
   const { data } = await api.get(`/api/invites/${encodeURIComponent(code.trim())}`);
   return data;
@@ -92,18 +136,22 @@ export async function getInvite(code) {
 /**
  * POST /api/groups/join → membership. 404: no such code; 409 code 'already_member' with their membership.
  * `upgrade: true` lets a coach code turn a Member into a Coach (ask the user first).
+ * Waits for: POST /api/groups/join
  */
 export async function joinGroup({ code, upgrade = false }) {
-  if (USE_MOCK) return mockJoinGroup({ code, upgrade });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockJoinGroup({ code, upgrade });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/groups/join', upgrade ? { code, upgrade } : { code });
   return data;
 }
 
-/** POST /api/user/two-factor/send → { expires_in, resend_in }. Emails a code. 429: retry_after (seconds). */
+/**
+ * POST /api/user/two-factor/send → { expires_in, resend_in }. Emails a code. 429: retry_after (seconds).
+ * Waits for: POST /api/user/two-factor/send
+ */
 export async function sendTwoFactorCode() {
-  if (USE_MOCK) return mockSendTwoFactorCode();
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockSendTwoFactorCode();
 
   await getCsrfCookie();
   const { data } = await api.post('/api/user/two-factor/send');
@@ -113,9 +161,10 @@ export async function sendTwoFactorCode() {
 /**
  * POST /api/user/two-factor/confirm → user with two_factor_confirmed_at
  * 422 code: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
+ * Waits for: POST /api/user/two-factor/confirm
  */
 export async function confirmTwoFactor({ code }) {
-  if (USE_MOCK) return mockConfirmTwoFactor({ code });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockConfirmTwoFactor({ code });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/user/two-factor/confirm', { code });
@@ -125,9 +174,10 @@ export async function confirmTwoFactor({ code }) {
 /**
  * POST /api/host-applications/school-email/send → { expires_in, resend_in }. Emails a code to the school address.
  * 422: errors.school_email. 429: retry_after (seconds).
+ * Waits for: POST /api/host-applications/school-email/send
  */
 export async function sendSchoolEmailCode({ school_email }) {
-  if (USE_MOCK) return mockSendSchoolEmailCode({ school_email });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockSendSchoolEmailCode({ school_email });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/host-applications/school-email/send', { school_email });
@@ -137,9 +187,10 @@ export async function sendSchoolEmailCode({ school_email }) {
 /**
  * POST /api/host-applications/school-email/verify → { school_email, verified }
  * 422 code: 'code_invalid' (with attempts_left) | 'code_expired' | 'too_many_attempts'
+ * Waits for: POST /api/host-applications/school-email/verify
  */
 export async function verifySchoolEmail({ school_email, code }) {
-  if (USE_MOCK) return mockVerifySchoolEmail({ school_email, code });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockVerifySchoolEmail({ school_email, code });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/host-applications/school-email/verify', { school_email, code });
@@ -152,9 +203,10 @@ export async function verifySchoolEmail({ school_email, code }) {
  *           or { host_type: 'community', organization_name, proof_link and/or proof_file }
  * (role_proof and proof_file are Files.) 403 code: 'two_factor_required'.
  * 409 code: 'already_pending' | 'already_verified'.
+ * Waits for: POST /api/host-applications
  */
 export async function applyToHost(application) {
-  if (USE_MOCK) return mockApplyToHost(application);
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockApplyToHost(application);
 
   await getCsrfCookie();
   const form = new FormData();
@@ -164,9 +216,12 @@ export async function applyToHost(application) {
   return data;
 }
 
-/** GET /api/host-applications/latest → { status, submitted_at, rejection_reason }. status 'none': never applied. */
+/**
+ * GET /api/host-applications/latest → { status, submitted_at, rejection_reason }. status 'none': never applied.
+ * Waits for: GET /api/host-applications/latest
+ */
 export async function getLatestHostApplication() {
-  if (USE_MOCK) return mockGetLatestHostApplication();
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockGetLatestHostApplication();
 
   const { data } = await api.get('/api/host-applications/latest');
   return data;
@@ -174,6 +229,7 @@ export async function getLatestHostApplication() {
 
 // ---- Mock --------------------------------------------------------------------
 // Invite codes: ACLC-4A (group member), COACH-RINA (coach). Anything else is a 404.
+// AI suggestions: localStorage.setItem('khameo.mockAiDown', '1') makes them answer 503; remove it to bring them back.
 // Two-factor and school email codes: see mockdata/mockCodes.js (123456 is correct).
 // Uploaded photos (resized) and host_status are kept in the mock session. Memberships, application details
 // and codes live in memory until a reload. Nobody approves applications in the mock: log in as
@@ -193,14 +249,14 @@ function findInvite(code) {
 async function mockSaveConsent({ recording_consent }) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   if (typeof recording_consent !== 'boolean') {
     throw validationError('The given data was invalid.', { recording_consent: ['Choose whether you agree.'] });
   }
-  if (!recording_consent) return updateSessionUser({ recording_consent_at: null });
+  if (!recording_consent) return updateUser({ recording_consent_at: null });
 
   const stillCurrent = user.recording_consent_at && user.consent_version === CONSENT_VERSION;
-  return updateSessionUser({
+  return updateUser({
     recording_consent_at: stillCurrent ? user.recording_consent_at : new Date().toISOString(),
     consent_version: CONSENT_VERSION,
   });
@@ -209,13 +265,13 @@ async function mockSaveConsent({ recording_consent }) {
 async function mockUploadAvatar({ avatar }) {
   await wait(MOCK_DELAY_MS);
 
-  requireSession();
+  requireUser();
   if (!avatar) throw validationError('The given data was invalid.', { avatar: ['Choose a photo.'] });
   const invalid = () => validationError('The given data was invalid.', { avatar: [MESSAGES.avatar] });
   if (!AVATAR_TYPES.includes(avatar.type) || avatar.size > MAX_AVATAR_BYTES) throw invalid();
   try {
     const avatar_url = await resizeToDataUrl(avatar);
-    updateSessionUser({ avatar_url });
+    updateUser({ avatar_url });
     return { avatar_url };
   } catch {
     // Not really an image, whatever its type says.
@@ -240,7 +296,7 @@ async function resizeToDataUrl(file, size = 256) {
 async function mockRemoveAvatar() {
   await wait(MOCK_DELAY_MS);
 
-  updateSessionUser({ avatar_url: null });
+  updateUser({ avatar_url: null });
   return { avatar_url: null };
 }
 
@@ -252,7 +308,7 @@ function isUsernameTaken(username, user) {
 async function mockCheckUsername({ username }) {
   await wait(300);
 
-  const user = requireSession();
+  const user = requireUser();
   const wanted = username?.trim() ?? '';
   if (!USERNAME_PATTERN.test(wanted)) {
     throw validationError('The given data was invalid.', { username: [MESSAGES.usernameFormat] });
@@ -263,11 +319,11 @@ async function mockCheckUsername({ username }) {
 async function mockCompleteOnboarding({ path, goals = [], profile = {} }) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   const displayName = profile.display_name?.trim() ?? '';
   const username = profile.username?.trim() ?? '';
   const bio = profile.bio?.trim() || null;
-  const occupation = profile.occupation?.trim() || null;
+  const roles = profile.roles ?? [];
 
   const errors = {};
   if (!ONBOARDING_PATHS.includes(path)) errors.path = ['Choose how you want to use Khameo.'];
@@ -280,30 +336,73 @@ async function mockCompleteOnboarding({ path, goals = [], profile = {} }) {
     errors['profile.username'] = [MESSAGES.usernameTaken];
   }
   if (bio?.length > MAX_BIO) errors['profile.bio'] = ['Use up to 160 characters.'];
-  if (occupation?.length > MAX_OCCUPATION) errors['profile.occupation'] = ['Use up to 60 characters.'];
+  Object.assign(errors, roleErrors(roles));
   if (Object.keys(errors).length > 0) throw validationError('The given data was invalid.', errors);
 
-  return updateSessionUser({
+  return updateUser({
     onboarded_at: new Date().toISOString(),
     onboarding_path: path,
     display_name: displayName,
     username,
     bio,
-    occupation,
+    roles,
   });
+}
+
+function roleErrors(roles) {
+  const errors = {};
+  if (roles.length > MAX_ROLES) errors['profile.roles'] = ['Add up to 5 roles.'];
+  roles.forEach(({ name, audiences = [] }, i) => {
+    if (!name?.trim() || name.length > MAX_ROLE_NAME) {
+      errors[`profile.roles.${i}.name`] = ['Use 1–40 characters for a role.'];
+    } else if (roles.slice(0, i).some((other) => sameName(other.name ?? '', name))) {
+      errors[`profile.roles.${i}.name`] = ['You already added this role.'];
+    }
+    if (audiences.length > MAX_CHECKED_AUDIENCES) {
+      errors[`profile.roles.${i}.audiences`] = ['Check up to 20 audiences per role.'];
+    } else if (audiences.some((a) => !a?.trim() || a.length > MAX_AUDIENCE_NAME)) {
+      errors[`profile.roles.${i}.audiences`] = ['Use 1–40 characters for an audience.'];
+    }
+  });
+  return errors;
+}
+
+const AI_CALLS_PER_MINUTE = 10;
+const AI_SUGGESTIONS = 4;
+let aiCalls = []; // timestamps
+
+async function mockSuggestAudiences({ existing_audiences = [] }) {
+  await wait(1000);
+
+  requireUser();
+  if (localStorage.getItem('khameo.mockAiDown')) {
+    throw apiError(503, { message: 'AI suggestions aren’t available right now.', code: 'ai_unavailable' });
+  }
+  const now = Date.now();
+  aiCalls = aiCalls.filter((time) => now - time < 60_000);
+  if (aiCalls.length >= AI_CALLS_PER_MINUTE) {
+    throw apiError(429, { message: 'Too many requests.', retry_after: Math.ceil((aiCalls[0] + 60_000 - now) / 1000) });
+  }
+  aiCalls.push(now);
+
+  return {
+    audiences: mockAiAudiences
+      .filter((audience) => !existing_audiences.some((existing) => sameName(existing, audience)))
+      .slice(0, AI_SUGGESTIONS),
+  };
 }
 
 async function mockGetInvite(code) {
   await wait(MOCK_DELAY_MS);
 
-  requireSession();
+  requireUser();
   return structuredClone(findInvite(code));
 }
 
 async function mockJoinGroup({ code, upgrade }) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   if (!code?.trim()) throw validationError('The given data was invalid.', { code: ['Enter your invite code.'] });
   const { group, role } = findInvite(code);
   const existing = memberships.find((m) => m.email === user.email && m.membership.group.id === group.id);
@@ -333,17 +432,17 @@ async function mockJoinGroup({ code, upgrade }) {
 async function mockSendTwoFactorCode() {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   return { message: 'We sent a code.', ...twoFactorCodes.send(user.email) };
 }
 
 async function mockConfirmTwoFactor({ code }) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   if (user.two_factor_confirmed_at) return user;
   twoFactorCodes.check(user.email, code);
-  return updateSessionUser({ two_factor_confirmed_at: new Date().toISOString() });
+  return updateUser({ two_factor_confirmed_at: new Date().toISOString() });
 }
 
 const schoolCodeKey = (user, schoolEmail) => `${user.email}|${schoolEmail.trim().toLowerCase()}`;
@@ -351,7 +450,7 @@ const schoolCodeKey = (user, schoolEmail) => `${user.email}|${schoolEmail.trim()
 async function mockSendSchoolEmailCode({ school_email = '' }) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   const error = schoolEmailError(school_email.trim());
   if (error) throw validationError('The given data was invalid.', { school_email: [error] });
   return { message: 'We sent a code.', ...schoolEmailCodes.send(schoolCodeKey(user, school_email)) };
@@ -360,7 +459,7 @@ async function mockSendSchoolEmailCode({ school_email = '' }) {
 async function mockVerifySchoolEmail({ school_email = '', code }) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   schoolEmailCodes.check(schoolCodeKey(user, school_email), code);
   return { school_email: school_email.trim(), verified: true };
 }
@@ -368,7 +467,7 @@ async function mockVerifySchoolEmail({ school_email = '', code }) {
 async function mockApplyToHost(application) {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   if (!user.two_factor_confirmed_at) {
     throw apiError(403, { message: 'Confirm two-factor first.', code: 'two_factor_required' });
   }
@@ -386,7 +485,7 @@ async function mockApplyToHost(application) {
     submitted_at: new Date().toISOString(),
     rejection_reason: null,
   };
-  updateSessionUser({ host_status: 'pending' });
+  updateUser({ host_status: 'pending' });
   return { status: 'pending' };
 }
 
@@ -425,7 +524,7 @@ function hostApplicationErrors({
 async function mockGetLatestHostApplication() {
   await wait(MOCK_DELAY_MS);
 
-  const user = requireSession();
+  const user = requireUser();
   return (
     mockHostApplications[user.email] ?? {
       // After a reload only the status is left, on the mock session.

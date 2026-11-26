@@ -1,11 +1,13 @@
 import { useId, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Input from '../../../components/ui/Input';
+import { useAuth } from '../../../hooks/useAuth';
 import { MAX_BIO, MAX_DISPLAY_NAME, MAX_USERNAME, MESSAGES } from '../profileRules';
 import { useOnboarding } from '../useOnboarding';
 import { useUsernameCheck } from '../useUsernameCheck';
-import OccupationField from './OccupationField';
+import { useUsernameSuggestion } from '../usernameSuggestion';
 import ProfilePhoto from './ProfilePhoto';
+import RolesSection from './RolesSection';
 import StepActions from './StepActions';
 import StepHeading from './StepHeading';
 
@@ -19,21 +21,36 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
   const navigate = useNavigate();
   const location = useLocation();
   const id = useId();
-  const { answers, updateAnswers } = useOnboarding();
+  const { user } = useAuth();
+  const { answers, updateProfile } = useOnboarding();
   const { profile } = answers;
+  // Fills in a free username from the real name ("Jenny Angeles" → jenny_angeles) on the first visit.
+  const suggestion = useUsernameSuggestion(user.name, profile.username, (username) =>
+    updateProfile(() => ({ username })),
+  );
+  const isSuggested = Boolean(suggestion.suggested) && suggestion.suggested === profile.username;
+  const usernameStatus = useUsernameCheck(profile.username, suggestion.suggested);
 
   const [serverErrors, setServerErrors] = useState(location.state?.errors ?? {});
   const [touched, setTouched] = useState({});
-  const usernameStatus = useUsernameCheck(profile.username);
+
 
   const nameMissing = !profile.display_name.trim();
   // A failed check doesn't block: the API checks again when onboarding is sent.
   const canContinue = !nameMissing && (usernameStatus === 'available' || usernameStatus === 'error');
 
   function setField(field, value) {
-    updateAnswers({ profile: { ...profile, [field]: value } });
+    updateProfile(() => ({ [field]: value }));
     setServerErrors((errors) => ({ ...errors, [field]: undefined }));
   }
+
+  function changeRoles(getRoles) {
+    updateProfile((current) => ({ roles: getRoles(current.roles) }));
+    // 'roles', or a nested field such as 'roles.0.name'.
+    setServerErrors((errors) => Object.fromEntries(Object.entries(errors).filter(([field]) => !field.startsWith('roles'))));
+  }
+
+  const rolesError = Object.entries(serverErrors).find(([field]) => field.startsWith('roles'))?.[1];
 
   const touch = (field) => setTouched((fields) => ({ ...fields, [field]: true }));
 
@@ -45,11 +62,15 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
     return usernameStatus === 'available' ? undefined : serverErrors.username;
   }
 
-  const usernameHint = {
-    checking: 'Checking…',
-    available: `@${profile.username} is available.`,
-    error: 'We couldn’t check this username right now. You can still continue.',
-  }[usernameStatus];
+  const usernameHint = suggestion.searching
+    ? 'Finding a username from your name…'
+    : {
+        checking: 'Checking…',
+        available: isSuggested
+          ? `Suggested from your name. @${profile.username} is available.`
+          : `@${profile.username} is available.`,
+        error: 'We couldn’t check this username right now. You can still continue.',
+      }[usernameStatus];
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -124,13 +145,11 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
         error={serverErrors.bio}
       />
 
-      <OccupationField
-        value={profile.occupation}
-        onChange={(value) => setField('occupation', value)}
-        error={serverErrors.occupation}
-      />
+      <RolesSection roles={profile.roles} onChange={changeRoles} error={rolesError} />
 
-      <p className="text-[13.5px] leading-[18px] text-muted">You can change these in Settings.</p>
+      <p className="text-[13.5px] leading-[18px] text-muted">
+        Pick any that apply. You can change these in Settings.
+      </p>
 
       <StepActions backTo={backTo} continueDisabled={!canContinue} />
     </form>

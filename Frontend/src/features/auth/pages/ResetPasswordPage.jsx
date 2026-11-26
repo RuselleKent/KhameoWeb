@@ -7,7 +7,7 @@ import PasswordInput from '../../../components/ui/PasswordInput';
 import { cn } from '../../../lib/utils';
 import AuthLayout from '../components/AuthLayout';
 import AuthSuccess from '../components/AuthSuccess';
-import { getFieldErrors, resetPassword } from '../auth.api';
+import { getErrorInfo, getFieldErrors, resetPassword } from '../auth.api';
 import { MIN_PASSWORD_LENGTH, getPasswordStrength } from '../passwordStrength';
 
 const linkClass = 'font-bold text-brand underline underline-offset-2 hover:text-brand-dark';
@@ -59,7 +59,7 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm] = useState('');
   const [confirmTouched, setConfirmTouched] = useState(false);
   const [serverErrors, setServerErrors] = useState({});
-  // null | 'linkExpired' | 'generic'
+  // null | 'linkExpired' | 'unavailable' (404) | 'server' (5xx) | 'network'
   const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   // "Password updated" is showing.
@@ -84,10 +84,16 @@ export default function ResetPasswordPage() {
       setUpdated(true);
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
-      if (fieldErrors.token) setNotice('linkExpired');
+      // The API puts a broken link on `token` (or on `email`, when the link's email was cut off).
+      if (fieldErrors.token || fieldErrors.email) setNotice('linkExpired');
       else if (fieldErrors.password || fieldErrors.password_confirmation) {
         setServerErrors({ password: fieldErrors.password, confirm: fieldErrors.password_confirmation });
-      } else setNotice('generic');
+      } else {
+        const { status } = getErrorInfo(error);
+        if (status === 404) setNotice('unavailable');
+        else if (status >= 500) setNotice('server');
+        else setNotice('network');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -144,9 +150,19 @@ export default function ResetPasswordPage() {
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
         <Header />
 
-        {notice === 'generic' && (
+        {notice === 'unavailable' && (
+          <Alert variant="error" icon={false} title="Password reset isn’t available yet">
+            We can’t update passwords right now. Try again later.
+          </Alert>
+        )}
+        {notice === 'server' && (
           <Alert variant="error" icon={false} title="Couldn’t update your password">
-            Something went wrong on our side. Check your connection and try again.
+            Something went wrong on our side. Try again in a few minutes.
+          </Alert>
+        )}
+        {notice === 'network' && (
+          <Alert variant="error" icon={false} title="Couldn’t update your password">
+            Check your connection and try again.
           </Alert>
         )}
 

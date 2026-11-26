@@ -29,25 +29,32 @@ function validLogin(array $overrides = []): array
     ], $overrides);
 }
 
-it('logs in with the right credentials and returns the user object', function () {
+it('asks a verified account for an emailed code instead of logging in', function () {
     accountWithPassword();
 
     $this->postJson('/api/login', validLogin())
         ->assertOk()
-        ->assertJsonStructure(['id', 'name', 'email', 'email_verified_at', 'onboarded_at', 'created_at', 'updated_at'])
-        ->assertJsonPath('email', 'jane.cruz@gmail.com')
-        ->assertJsonMissingPath('password')
-        ->assertJsonMissingPath('is_admin');
+        ->assertExactJson([
+            'two_factor_required' => true,
+            'email' => 'jane.cruz@gmail.com',
+            'expires_in' => 600,
+            'resend_in' => 60,
+        ]);
 
-    $this->assertAuthenticated();
+    $this->assertGuest();
 });
 
-it('lets an unverified user log in', function () {
+it('logs an unverified user in right away and returns the user object', function () {
     accountWithPassword(['email_verified_at' => null]);
 
     $this->postJson('/api/login', validLogin())
         ->assertOk()
-        ->assertJsonPath('email_verified_at', null);
+        ->assertJsonPath('email', 'jane.cruz@gmail.com')
+        ->assertJsonPath('email_verified_at', null)
+        ->assertJsonMissingPath('password')
+        ->assertJsonMissingPath('is_admin');
+
+    $this->assertAuthenticated();
 });
 
 it('ignores letter case and spaces in the email', function () {
@@ -147,8 +154,15 @@ it('returns the signed-in user', function () {
         ->assertOk()
         ->assertJsonPath('id', $user->id)
         ->assertJsonPath('email', 'jane.cruz@gmail.com')
-        ->assertJsonStructure(['id', 'name', 'email', 'email_verified_at', 'onboarded_at', 'created_at', 'updated_at'])
-        ->assertJsonMissingPath('host_status')
+        ->assertJsonStructure([
+            'id', 'name', 'email', 'email_verified_at', 'recording_consent_at', 'consent_version', 'onboarded_at',
+            'onboarding_path', 'display_name', 'username', 'bio', 'roles', 'avatar_url', 'two_factor_confirmed_at',
+            'host_status', 'created_at', 'updated_at',
+        ])
+        ->assertJsonPath('host_status', 'none')
+        ->assertJsonPath('roles', [])
+        ->assertJsonMissingPath('avatar_path')
+        ->assertJsonMissingPath('google_id')
         ->assertJsonMissingPath('is_admin');
 });
 

@@ -13,6 +13,34 @@ export const ONBOARDING_GOALS = [
   'stay_on_time',
 ];
 
+// What the mock "AI" suggests, for any role.
+export const mockAiAudiences = [
+  'Student Council',
+  'Adviser',
+  'Department Faculty',
+  'Scholarship Committee',
+  'Internship Interviewers',
+  'Online Class',
+  'Alumni',
+  'Guest Speakers',
+  'Barangay Officials',
+  'Local Businesses',
+  'Nonprofit Partners',
+  'Press and Media',
+  'Workshop Participants',
+  'Podcast Listeners',
+  'Contest Judges',
+  'New Hires',
+  'Board of Directors',
+  'Startup Mentors',
+  'Parents Association',
+  'Community Leaders',
+  'Book Club',
+  'Youth Groups',
+  'Sports Team',
+  'Award Committee',
+];
+
 const speechCenter = {
   id: 1,
   name: 'ACLC Speech Center',
