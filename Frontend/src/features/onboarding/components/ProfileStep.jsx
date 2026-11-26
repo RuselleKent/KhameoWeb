@@ -1,9 +1,11 @@
 import { useId, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Input from '../../../components/ui/Input';
+import { useAuth } from '../../../hooks/useAuth';
 import { MAX_BIO, MAX_DISPLAY_NAME, MAX_USERNAME, MESSAGES } from '../profileRules';
 import { useOnboarding } from '../useOnboarding';
 import { useUsernameCheck } from '../useUsernameCheck';
+import { useUsernameSuggestion } from '../usernameSuggestion';
 import ProfilePhoto from './ProfilePhoto';
 import RolesSection from './RolesSection';
 import StepActions from './StepActions';
@@ -19,12 +21,19 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
   const navigate = useNavigate();
   const location = useLocation();
   const id = useId();
+  const { user } = useAuth();
   const { answers, updateProfile } = useOnboarding();
   const { profile } = answers;
+  // Fills in a free username from the real name ("Jenny Angeles" → jenny_angeles) on the first visit.
+  const suggestion = useUsernameSuggestion(user.name, profile.username, (username) =>
+    updateProfile(() => ({ username })),
+  );
+  const isSuggested = Boolean(suggestion.suggested) && suggestion.suggested === profile.username;
+  const usernameStatus = useUsernameCheck(profile.username, suggestion.suggested);
 
   const [serverErrors, setServerErrors] = useState(location.state?.errors ?? {});
   const [touched, setTouched] = useState({});
-  const usernameStatus = useUsernameCheck(profile.username);
+
 
   const nameMissing = !profile.display_name.trim();
   // A failed check doesn't block: the API checks again when onboarding is sent.
@@ -53,11 +62,15 @@ export default function ProfileStep({ pathId, label, backTo, nextTo }) {
     return usernameStatus === 'available' ? undefined : serverErrors.username;
   }
 
-  const usernameHint = {
-    checking: 'Checking…',
-    available: `@${profile.username} is available.`,
-    error: 'We couldn’t check this username right now. You can still continue.',
-  }[usernameStatus];
+  const usernameHint = suggestion.searching
+    ? 'Finding a username from your name…'
+    : {
+        checking: 'Checking…',
+        available: isSuggested
+          ? `Suggested from your name. @${profile.username} is available.`
+          : `@${profile.username} is available.`,
+        error: 'We couldn’t check this username right now. You can still continue.',
+      }[usernameStatus];
 
   function handleSubmit(e) {
     e.preventDefault();

@@ -24,23 +24,28 @@ import {
 } from './profileRules';
 import { sameName } from './roles';
 
-// Flip to false once the endpoints in docs/api-onboarding.md are ready (Russel). Until then every
-// function below is mocked; "Waits for:" names the endpoint it stands in for.
-const USE_MOCK = true;
+// Real (Laravel): consent, avatar, username check, finish onboarding. Set USE_MOCK = true to mock them
+// too (no Laravel needed).
+const USE_MOCK = false;
+// Waits for: the Groups module (Russel): invites, joining groups, two-factor setup, school email and
+// host applications (host path).
+const GROUPS_AND_HOSTS_USE_MOCK = true;
+// Waits for: POST /api/ai/suggest-audiences. The profile step shows the button as "Soon" and doesn't call it.
+const AI_USE_MOCK = true;
 const MOCK_DELAY_MS = 700;
 
 // ---- Mock wiring (AuthProvider) ----------------------------------------------
 // The mocks read and change the signed-in user from AuthProvider (see mockdata/mockUserStore.js).
-// Both are no-ops once USE_MOCK is false.
+// Both are no-ops once nothing is mocked.
 
 /** AuthProvider calls this once with a reader for the current user and its setUser. */
 export function connectOnboardingMock(getUser, setUser) {
-  if (USE_MOCK) connectMockUser(getUser, setUser);
+  if (USE_MOCK || GROUPS_AND_HOSTS_USE_MOCK) connectMockUser(getUser, setUser);
 }
 
 /** Puts back the fields the mocks saved for this account (the real API doesn't store them yet). */
 export function withMockOnboardingFields(user) {
-  return USE_MOCK ? withMockFields(user) : user;
+  return USE_MOCK || GROUPS_AND_HOSTS_USE_MOCK ? withMockFields(user) : user;
 }
 
 // ---- Requests ----------------------------------------------------------------
@@ -48,7 +53,6 @@ export function withMockOnboardingFields(user) {
 
 /**
  * PATCH /api/user/consent → user with recording_consent_at and consent_version. false withdraws consent.
- * Waits for: PATCH /api/user/consent
  */
 export async function saveConsent({ recording_consent }) {
   if (USE_MOCK) return mockSaveConsent({ recording_consent });
@@ -60,7 +64,6 @@ export async function saveConsent({ recording_consent }) {
 
 /**
  * POST /api/user/avatar (multipart) → { avatar_url }. `avatar` is a File. 422: errors.avatar.
- * Waits for: POST /api/user/avatar
  */
 export async function uploadAvatar({ avatar }) {
   if (USE_MOCK) return mockUploadAvatar({ avatar });
@@ -74,7 +77,6 @@ export async function uploadAvatar({ avatar }) {
 
 /**
  * DELETE /api/user/avatar → { avatar_url: null }.
- * Waits for: DELETE /api/user/avatar
  */
 export async function removeAvatar() {
   if (USE_MOCK) return mockRemoveAvatar();
@@ -87,7 +89,6 @@ export async function removeAvatar() {
 /**
  * GET /api/usernames/check → { available }. 422: errors.username (wrong length or characters).
  * The profile step calls this 400 ms after typing stops.
- * Waits for: GET /api/usernames/check
  */
 export async function checkUsername({ username, signal }) {
   if (USE_MOCK) return mockCheckUsername({ username });
@@ -100,7 +101,6 @@ export async function checkUsername({ username, signal }) {
  * PATCH /api/user/onboarding → user with onboarded_at and onboarding_path.
  * profile: { display_name, username, bio, roles: [{ name, audiences: [...] }] } (the photo goes through uploadAvatar)
  * 422: errors.path, errors.goals, errors['profile.username'], …
- * Waits for: PATCH /api/user/onboarding
  */
 export async function completeOnboarding({ path, goals, profile }) {
   if (USE_MOCK) return mockCompleteOnboarding({ path, goals, profile });
@@ -115,7 +115,7 @@ export async function completeOnboarding({ path, goals, profile }) {
  * 503 code: 'ai_unavailable'. 429: retry_after (10 a minute).
  */
 export async function suggestAudiences({ role, existing_audiences }) {
-  if (USE_MOCK) return mockSuggestAudiences({ role, existing_audiences });
+  if (AI_USE_MOCK) return mockSuggestAudiences({ role, existing_audiences });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/ai/suggest-audiences', { role, existing_audiences });
@@ -127,7 +127,7 @@ export async function suggestAudiences({ role, existing_audiences }) {
  * Waits for: GET /api/invites/{code}
  */
 export async function getInvite(code) {
-  if (USE_MOCK) return mockGetInvite(code);
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockGetInvite(code);
 
   const { data } = await api.get(`/api/invites/${encodeURIComponent(code.trim())}`);
   return data;
@@ -139,7 +139,7 @@ export async function getInvite(code) {
  * Waits for: POST /api/groups/join
  */
 export async function joinGroup({ code, upgrade = false }) {
-  if (USE_MOCK) return mockJoinGroup({ code, upgrade });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockJoinGroup({ code, upgrade });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/groups/join', upgrade ? { code, upgrade } : { code });
@@ -151,7 +151,7 @@ export async function joinGroup({ code, upgrade = false }) {
  * Waits for: POST /api/user/two-factor/send
  */
 export async function sendTwoFactorCode() {
-  if (USE_MOCK) return mockSendTwoFactorCode();
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockSendTwoFactorCode();
 
   await getCsrfCookie();
   const { data } = await api.post('/api/user/two-factor/send');
@@ -164,7 +164,7 @@ export async function sendTwoFactorCode() {
  * Waits for: POST /api/user/two-factor/confirm
  */
 export async function confirmTwoFactor({ code }) {
-  if (USE_MOCK) return mockConfirmTwoFactor({ code });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockConfirmTwoFactor({ code });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/user/two-factor/confirm', { code });
@@ -177,7 +177,7 @@ export async function confirmTwoFactor({ code }) {
  * Waits for: POST /api/host-applications/school-email/send
  */
 export async function sendSchoolEmailCode({ school_email }) {
-  if (USE_MOCK) return mockSendSchoolEmailCode({ school_email });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockSendSchoolEmailCode({ school_email });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/host-applications/school-email/send', { school_email });
@@ -190,7 +190,7 @@ export async function sendSchoolEmailCode({ school_email }) {
  * Waits for: POST /api/host-applications/school-email/verify
  */
 export async function verifySchoolEmail({ school_email, code }) {
-  if (USE_MOCK) return mockVerifySchoolEmail({ school_email, code });
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockVerifySchoolEmail({ school_email, code });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/host-applications/school-email/verify', { school_email, code });
@@ -206,7 +206,7 @@ export async function verifySchoolEmail({ school_email, code }) {
  * Waits for: POST /api/host-applications
  */
 export async function applyToHost(application) {
-  if (USE_MOCK) return mockApplyToHost(application);
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockApplyToHost(application);
 
   await getCsrfCookie();
   const form = new FormData();
@@ -221,7 +221,7 @@ export async function applyToHost(application) {
  * Waits for: GET /api/host-applications/latest
  */
 export async function getLatestHostApplication() {
-  if (USE_MOCK) return mockGetLatestHostApplication();
+  if (GROUPS_AND_HOSTS_USE_MOCK) return mockGetLatestHostApplication();
 
   const { data } = await api.get('/api/host-applications/latest');
   return data;

@@ -4,23 +4,15 @@ import { apiError, rateLimitError, readSession, validationError, wait, writeSess
 import { blankUser, mockAccounts, mockUser } from '../../mockdata/user';
 
 // ---- Mock switches -----------------------------------------------------------
-// USE_MOCK mocks the whole auth API (no Laravel needed). With it off, the endpoints Laravel already has
-// are real (register, login, email verify/resend, user, logout) and the two switches below cover the
-// ones that aren't built yet. Endpoints without a switch (email change, forgot/reset password) call the
-// real API and show a clear error until they exist.
+// Every endpoint below is real (Laravel). USE_MOCK = true mocks them all, for working without Laravel.
 export const USE_MOCK = false;
-
-// Waits for: POST /api/login/two-factor and /api/login/two-factor/resend (Russel).
-// While true, the code step after a real /api/login is mocked (the code is 123456). Laravel has already
-// started the session by then, so a reload on /login/verify skips the code until the real endpoint exists.
-const LOGIN_CODE_USE_MOCK = true;
 
 // Waits for: GET /auth/google/redirect and /auth/google/callback (Russel).
 // While true there is no popup: the result comes after 1.5s, chosen with the dev-only picker.
 export const GOOGLE_USE_MOCK = true;
 
 /** True when the code on /login/verify is the mock one (123456), for the dev-only hint. */
-export const LOGIN_CODE_IS_MOCK = USE_MOCK || LOGIN_CODE_USE_MOCK;
+export const LOGIN_CODE_IS_MOCK = USE_MOCK;
 
 const MOCK_DELAY_MS = 700;
 const GOOGLE_MOCK_DELAY_MS = 1500;
@@ -30,17 +22,17 @@ const GOOGLE_MOCK_DELAY_MS = 1500;
 // read them with getFieldErrors() / getErrorInfo() below. Shapes: docs/api-auth.md.
 
 /**
- * POST /api/login → { two_factor_required: true, expires_in, resend_in }: every email log in emails a
- * 6-digit code and nobody is signed in until loginTwoFactor. 422: errors.email (no account) or
- * errors.password. 403: the account can't log in (locked). 429: retry_after (5 failed tries).
+ * POST /api/login → { two_factor_required: true, email, expires_in, resend_in }: a verified account gets a
+ * 6-digit code by email and nobody is signed in until loginTwoFactor. An unverified account is signed in
+ * right away and the user object comes back (the app then goes to /verify-email).
+ * 422: errors.email (no account) or errors.password. 403: the account can't log in (locked).
+ * 429: retry_after (5 failed tries).
  */
 export async function login({ email, password, remember = false }) {
   if (USE_MOCK) return mockLogin({ email, password });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/login', { email, password, remember });
-  // Laravel doesn't ask for the code yet and answers with the user: mock the code step on top.
-  if (LOGIN_CODE_USE_MOCK && !data.two_factor_required) return startMockLoginCode(data);
   return data;
 }
 
@@ -51,7 +43,6 @@ export async function login({ email, password, remember = false }) {
  */
 export async function loginTwoFactor({ code }) {
   if (USE_MOCK) return mockLoginTwoFactor({ code });
-  if (LOGIN_CODE_USE_MOCK) return finishMockLoginCode({ code });
 
   await getCsrfCookie();
   const { data } = await api.post('/api/login/two-factor', { code });
@@ -61,29 +52,19 @@ export async function loginTwoFactor({ code }) {
 /** POST /api/login/two-factor/resend → { expires_in, resend_in }. 429: retry_after. 401 code: 'login_expired'. */
 export async function resendLoginCode() {
   if (USE_MOCK) return mockResendLoginCode();
-  if (LOGIN_CODE_USE_MOCK) return resendMockLoginCode();
 
   await getCsrfCookie();
   const { data } = await api.post('/api/login/two-factor/resend');
   return data;
 }
 
-/** Gives up a log in waiting for its code ("Back to log in" on /login/verify). Never fails. */
+/**
+ * Gives up a log in waiting for its code ("Back to log in" on /login/verify). Never fails.
+ * Nothing to call on the real API: the waiting log in sits in the guest session and expires after 15 minutes,
+ * and logging in again replaces it.
+ */
 export async function cancelLogin() {
-  if (USE_MOCK) {
-    writePendingLogin(null);
-    return;
-  }
-  if (LOGIN_CODE_USE_MOCK) {
-    // The real /api/login already started a session: end it so the code can't be skipped by reloading.
-    pendingLoginUser = null;
-    try {
-      await logout();
-    } catch {
-      // Nothing to end.
-    }
-  }
-  // The real endpoint keeps the pending log in in the guest session; it expires on its own.
+  if (USE_MOCK) writePendingLogin(null);
 }
 
 /**
@@ -123,7 +104,7 @@ export async function resendVerificationCode({ email }) {
 /**
  * POST /api/email/change → { user, verification: { expires_in, resend_in } }. Only before the email is
  * verified: swaps the address and emails a new code to it (the old code stops working).
- * 422: errors.email ("This email is already registered.", format). 429: retry_after.
+ * 422: errors.email ("This email is already registered.", format, same as now). 403 code: 'already_verified'.
  */
 export async function changeEmail({ email }) {
   if (USE_MOCK) return mockChangeEmail({ email });
@@ -145,7 +126,7 @@ export async function forgotPassword({ email }) {
 /**
  * POST /api/reset-password → { message }. Does not start a session: the user logs in next (with a code).
  * Payload: { token, email, password, password_confirmation }
- * 422: errors.token (link expired or invalid) or errors.password.
+ * 422: errors.token or errors.email (link expired or invalid), errors.password, errors.password_confirmation.
  */
 export async function resetPassword(payload) {
   if (USE_MOCK) return mockResetPassword(payload);
@@ -160,6 +141,11 @@ export async function getUser() {
   if (USE_MOCK) return mockGetUser();
 
   const { data } = await api.get('/api/user');
+  // A 200 that isn't a user (an HTML error page, a misrouted proxy) must not count as signed in:
+  // AuthProvider then shows "We couldn't load Khameo" with Retry.
+  if (!data || typeof data !== 'object' || !('id' in data)) {
+    throw new Error('GET /api/user did not return a user.');
+  }
   return data;
 }
 
@@ -263,31 +249,6 @@ const failedLogins = new Map(); // email → { count, lockedUntil }
 
 const normalize = (email) => email.trim().toLowerCase();
 const findAccount = (email) => mockAccounts.find((a) => a.email.toLowerCase() === normalize(email));
-
-// Real /api/login + mocked code: the user Laravel returned, until the code is entered.
-let pendingLoginUser = null;
-
-function startMockLoginCode(user) {
-  pendingLoginUser = user;
-  return { two_factor_required: true, ...loginCodes.send(user.email, { force: true }) };
-}
-
-async function finishMockLoginCode({ code }) {
-  await wait(MOCK_DELAY_MS);
-
-  const user = pendingLoginUser;
-  if (!user) throw apiError(401, { message: 'Log in again.', code: 'login_expired' });
-  loginCodes.check(user.email, code);
-  pendingLoginUser = null;
-  return user;
-}
-
-async function resendMockLoginCode() {
-  await wait(MOCK_DELAY_MS);
-
-  if (!pendingLoginUser) throw apiError(401, { message: 'Log in again.', code: 'login_expired' });
-  return { message: 'We sent a new code.', ...loginCodes.send(pendingLoginUser.email) };
-}
 
 async function mockGetUser() {
   await wait(300);

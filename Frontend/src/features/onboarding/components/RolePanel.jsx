@@ -1,10 +1,8 @@
 import { useId, useState } from 'react';
-import { Check, ChevronDown, LoaderCircle } from 'lucide-react';
-import { getErrorInfo } from '../../../lib/apiErrors';
+import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { MAX_AUDIENCE_NAME, MAX_CHECKED_AUDIENCES } from '../audiences';
-import { suggestAudiences } from '../onboarding.api';
-import { addOwnAudience, applySuggestions, checkedCount, cleanName, isFull, setAudienceChecked } from '../roles';
+import { addOwnAudience, checkedCount, cleanName, isFull, setAudienceChecked } from '../roles';
 
 const SOURCE_ORDER = { default: 0, ai: 1, own: 2 };
 
@@ -113,51 +111,49 @@ function AddAudience({ full, onAdd }) {
   );
 }
 
-/** Message under the AI button for a failed call. */
-function aiErrorMessage({ status, code, retryAfter }) {
-  if (status === 503 && code === 'ai_unavailable') return 'AI suggestions aren’t available right now.';
-  if (status === 429) return `You’ve asked for a lot of suggestions. Try again in ${retryAfter ?? 60} seconds.`;
-  return 'We couldn’t get suggestions.';
+/**
+ * "✦ Suggest more with AI", shown but not working yet (no API call). aria-disabled instead of disabled,
+ * so it can still be focused and its "coming soon" tooltip shows on hover and on keyboard focus.
+ */
+function AiSuggestSoon() {
+  const tipId = useId();
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-disabled="true"
+        aria-describedby={tipId}
+        onClick={(e) => e.preventDefault()}
+        className={cn(
+          'inline-flex min-h-10 cursor-not-allowed items-center gap-2 rounded-[10px] bg-brand-disabled px-4 text-sm font-bold text-white',
+          focusRing,
+        )}
+      >
+        <span aria-hidden="true">✦</span>
+        Suggest more with AI
+        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] leading-4 font-bold text-brand">Soon</span>
+      </button>
+      <span
+        id={tipId}
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-0 z-10 mb-2 w-max max-w-[240px] rounded-lg bg-ink px-2.5 py-1.5 text-xs leading-4 text-white opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+      >
+        AI suggestions are coming soon
+      </span>
+    </span>
+  );
 }
 
 /**
  * One added role and its audiences (Figma 59917:38183).
- * - `onChange((role) => nextRole)` always works on the latest role, since suggestions arrive later
+ * - `onChange((role) => nextRole)` always works on the latest role
  */
 export default function RolePanel({ role, open, onToggle, onChange, onRemove }) {
   const id = useId();
-  const [loading, setLoading] = useState(false);
-  const [aiError, setAiError] = useState(null);
-  const [announcement, setAnnouncement] = useState('');
-
   const count = checkedCount(role);
   const full = isFull(role);
-  const hasSuggestions = role.audiences.some((a) => a.source === 'ai');
   // Array.sort is stable: defaults, then AI suggestions, then the user's own, each in the order added.
   const audiences = [...role.audiences].sort((a, b) => SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source]);
-
-  async function suggest() {
-    if (loading) return;
-    setLoading(true);
-    setAiError(null);
-    setAnnouncement('');
-    try {
-      const { audiences: names } = await suggestAudiences({
-        role: role.name,
-        existing_audiences: role.audiences.map((a) => a.name),
-      });
-      if (names.length > 0) {
-        onChange((current) => applySuggestions(current, names));
-        setAnnouncement('New AI suggestions added.');
-      } else {
-        setAnnouncement('No new suggestions right now.');
-      }
-    } catch (error) {
-      setAiError(aiErrorMessage(getErrorInfo(error)));
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <section aria-labelledby={`${id}-name`} className="rounded-xl border border-field bg-[#FAF9F6] p-4 sm:p-5">
@@ -209,52 +205,13 @@ export default function RolePanel({ role, open, onToggle, onChange, onRemove }) 
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              type="button"
-              disabled={loading}
-              aria-busy={loading || undefined}
-              onClick={suggest}
-              className={cn(
-                'inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-brand px-4 text-sm font-bold text-white transition-colors hover:bg-brand-dark aria-busy:cursor-wait',
-                focusRing,
-              )}
-            >
-              {loading ? (
-                <>
-                  <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
-                  Suggesting…
-                </>
-              ) : (
-                <>
-                  <span aria-hidden="true">{hasSuggestions ? '↻' : '✦'}</span>
-                  {hasSuggestions ? 'Generate again' : 'Suggest more with AI'}
-                </>
-              )}
-            </button>
+            <AiSuggestSoon />
             <AddAudience full={full} onAdd={(name) => onChange((current) => addOwnAudience(current, name))} />
           </div>
 
-          <div role="alert" className="empty:hidden">
-            {aiError && (
-              <p className="text-[13px] leading-[18px] text-danger">
-                {aiError}{' '}
-                <button
-                  type="button"
-                  onClick={suggest}
-                  className={cn('rounded font-bold text-brand underline underline-offset-2 hover:text-brand-dark', focusRing)}
-                >
-                  Retry
-                </button>
-              </p>
-            )}
-          </div>
-          <p aria-live="polite" className={announcement.startsWith('No new') ? 'text-[13px] leading-[17px] text-muted' : 'sr-only'}>
-            {announcement}
-          </p>
-
           <p className="text-[13px] leading-[17px] text-muted">
             {full && <span className="font-semibold text-ink">You’ve checked {MAX_CHECKED_AUDIENCES}, the most per role. </span>}
-            You can check up to {MAX_CHECKED_AUDIENCES} audiences per role. Unchecked suggestions are not saved.
+            You can check up to {MAX_CHECKED_AUDIENCES} audiences per role. Only checked audiences are saved.
           </p>
         </div>
       </div>

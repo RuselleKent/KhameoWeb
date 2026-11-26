@@ -7,14 +7,16 @@ const DEBOUNCE_MS = 400;
 /**
  * Live availability of a username, checked 400 ms after typing stops.
  * Returns 'empty' | 'invalid' | 'checking' | 'available' | 'taken' | 'error' (the check itself failed).
+ * `knownAvailable` is a username just checked elsewhere (the name suggestion), so it isn't checked twice.
  */
-export function useUsernameCheck(username) {
+export function useUsernameCheck(username, knownAvailable = null) {
   // The last answer, and which username it was for.
   const [result, setResult] = useState({ username: null, status: null });
   const valid = USERNAME_PATTERN.test(username);
+  const alreadyKnown = Boolean(knownAvailable) && knownAvailable === username;
 
   useEffect(() => {
-    if (!valid) return undefined;
+    if (!valid || alreadyKnown) return undefined;
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -33,9 +35,10 @@ export function useUsernameCheck(username) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [username, valid]);
+  }, [username, valid, alreadyKnown]);
 
   if (!username) return 'empty';
   if (!valid) return 'invalid';
+  if (alreadyKnown) return 'available';
   return result.username === username ? result.status : 'checking';
 }

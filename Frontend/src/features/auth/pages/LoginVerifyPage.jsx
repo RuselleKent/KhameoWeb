@@ -17,6 +17,11 @@ export default function LoginVerifyPage() {
   const [expired, setExpired] = useState(false);
 
   const { email, from, verification } = location.state ?? {};
+  // Counted from when the code was sent, so a reload doesn't restart the cooldown.
+  const [initialResendIn] = useState(() => {
+    const elapsed = verification?.sent_at ? Math.floor((Date.now() - verification.sent_at) / 1000) : 0;
+    return Math.max(0, (verification?.resend_in ?? 60) - elapsed);
+  });
 
   // Opened by URL: there is no log in to finish.
   if (!email) return <Navigate to="/login" replace />;
@@ -53,7 +58,7 @@ export default function LoginVerifyPage() {
         <TwoFactorCodeForm
           onVerify={(code) => loginTwoFactor({ code })}
           onResend={resendLoginCode}
-          resendIn={verification?.resend_in ?? 60}
+          resendIn={initialResendIn}
           onError={(info) => {
             if (info.code !== 'login_expired') return false;
             setExpired(true);

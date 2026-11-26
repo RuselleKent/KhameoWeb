@@ -130,7 +130,8 @@ export default function SignupPage() {
         accepted_terms: values.acceptedTerms,
       });
       // The verify page starts its expiry and resend timers from `verification`.
-      navigate('/verify-email', { replace: true, state: { email, verification } });
+      // sent_at lets the verify page keep counting from now after a reload.
+      navigate('/verify-email', { replace: true, state: { email, verification: { ...verification, sent_at: Date.now() } } });
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
       const mapped = {};

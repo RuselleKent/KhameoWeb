@@ -104,7 +104,8 @@ export default function LoginPage() {
       if (result.two_factor_required) {
         // Keep `from` so the verify page can still return to the page they wanted.
         navigate('/login/verify', {
-          state: { email: email.trim(), from: location.state?.from, verification: result },
+          // sent_at lets the code page keep counting from now after a reload.
+          state: { email: email.trim(), from: location.state?.from, verification: { ...result, sent_at: Date.now() } },
         });
       }
       // Otherwise the user is stored: RedirectIfAuthenticated moves on to their next step.

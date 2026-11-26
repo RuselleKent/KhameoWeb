@@ -84,7 +84,8 @@ export default function ResetPasswordPage() {
       setUpdated(true);
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
-      if (fieldErrors.token) setNotice('linkExpired');
+      // The API puts a broken link on `token` (or on `email`, when the link's email was cut off).
+      if (fieldErrors.token || fieldErrors.email) setNotice('linkExpired');
       else if (fieldErrors.password || fieldErrors.password_confirmation) {
         setServerErrors({ password: fieldErrors.password, confirm: fieldErrors.password_confirmation });
       } else {

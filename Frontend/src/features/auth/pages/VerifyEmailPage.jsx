@@ -13,8 +13,18 @@ import StepDots from '../components/StepDots';
 import { useAuth } from '../../../hooks/useAuth';
 import { changeEmail, getErrorInfo, getFieldErrors, resendVerificationCode, verifyEmail } from '../auth.api';
 
-// Used when the page is opened without timers from sign-up (e.g. after a reload).
-const DEFAULT_TIMERS = { expires_in: 600, resend_in: 60 };
+/**
+ * Seconds left on sign-up's timers ({ expires_in, resend_in, sent_at }), counted from when the code was sent,
+ * so a reload doesn't restart them. null when the page doesn't know (opened after logging in, say).
+ */
+function remainingTimers(verification) {
+  if (!verification) return null;
+  const elapsed = verification.sent_at ? Math.floor((Date.now() - verification.sent_at) / 1000) : 0;
+  return {
+    expires_in: Math.max(0, verification.expires_in - elapsed),
+    resend_in: Math.max(0, verification.resend_in - elapsed),
+  };
+}
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const linkClass = 'font-bold text-brand underline underline-offset-2 hover:text-brand-dark';
@@ -132,10 +142,14 @@ export default function VerifyEmailPage() {
   const { user, setUser, logout } = useAuth();
   // Sign-up passes the email; after a reload (or a login before verifying) it comes from the session.
   // "Change it" replaces it.
+  // The signed-in user wins over the location state, which still has the old address after "Change it" + reload.
   const [email, setEmail] = useState(
-    () => location.state?.email ?? user?.email ?? searchParams.get('email') ?? '',
+    () => user?.email ?? location.state?.email ?? searchParams.get('email') ?? '',
   );
-  const timers = location.state?.verification ?? DEFAULT_TIMERS;
+  // Without known timers (opened after logging in, or a code sent long ago) don't invent a countdown:
+  // "Send a new code" is available and the server says if it's too soon.
+  const [initialTimers] = useState(() => remainingTimers(location.state?.verification));
+  const [timersKnown, setTimersKnown] = useState(Boolean(initialTimers));
   const [changing, setChanging] = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -150,10 +164,10 @@ export default function VerifyEmailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
   const [verifiedUser, setVerifiedUser] = useState(null);
-  const [expiresIn, restartExpiry] = useCountdown(timers.expires_in);
-  const [resendIn, restartResend] = useCountdown(timers.resend_in);
+  const [expiresIn, restartExpiry] = useCountdown(initialTimers?.expires_in ?? 0);
+  const [resendIn, restartResend] = useCountdown(initialTimers?.resend_in ?? 0);
 
-  const lockReason = locked ?? (expiresIn === 0 ? 'expired' : null);
+  const lockReason = locked ?? (timersKnown && expiresIn === 0 ? 'expired' : null);
   const complete = /^\d{6}$/.test(code);
 
   function handleCodeChange(next) {
@@ -194,6 +208,7 @@ export default function VerifyEmailPage() {
     setNotice(null);
     try {
       const next = await resendVerificationCode({ email });
+      setTimersKnown(true);
       restartExpiry(next.expires_in);
       restartResend(next.resend_in);
       setCode('');
@@ -214,6 +229,7 @@ export default function VerifyEmailPage() {
   function handleEmailChanged({ user: changed, verification }) {
     setEmail(changed.email);
     setUser(changed);
+    setTimersKnown(true);
     restartExpiry(verification.expires_in);
     restartResend(verification.resend_in);
     setCode('');
@@ -344,7 +360,11 @@ export default function VerifyEmailPage() {
           ) : (
             <>
               <div id="code-status" className="mt-5 flex justify-between gap-4 text-[13px] leading-[15px] text-muted">
-                <p>Code expires in {formatDuration(expiresIn, { padMinutes: true })}</p>
+                <p>
+                  {timersKnown
+                    ? `Code expires in ${formatDuration(expiresIn, { padMinutes: true })}`
+                    : 'Codes last 10 minutes.'}
+                </p>
                 {resendControl}
               </div>
               <p className="mt-[18px] text-[13px] leading-[15px] text-muted">
