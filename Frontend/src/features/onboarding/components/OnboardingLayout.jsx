@@ -15,12 +15,12 @@ import StepProgress from './StepProgress';
  * The consent screen comes first, so steps redirect there until it is answered.
  */
 export default function OnboardingLayout() {
-  const { user } = useAuth();
+  const { user, consentSkipped } = useAuth();
   const { answers, updateAnswers } = useOnboarding();
   const handle = useMatches().findLast((match) => match.handle?.step)?.handle;
 
   // Once onboarded this was already asked; Ready and the tour stay reachable.
-  if (!user.onboarded_at && !user.recording_consent_at && !answers.consentSkipped) {
+  if (!user.onboarded_at && !user.recording_consent_at && !consentSkipped) {
     return <Navigate to="/onboarding/consent" replace />;
   }
 

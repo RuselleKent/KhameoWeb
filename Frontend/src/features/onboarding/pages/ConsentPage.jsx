@@ -8,10 +8,10 @@ import usersIcon from '../../../assets/onboarding/icon-users.svg';
 import Alert from '../../../components/ui/Alert';
 import Button from '../../../components/ui/Button';
 import Checkbox from '../../../components/ui/Checkbox';
+import { nextStepFor } from '../../../app/authRedirect';
 import { useAuth } from '../../../hooks/useAuth';
 import AuthLayout from '../../auth/components/AuthLayout';
 import { saveConsent } from '../onboarding.api';
-import { useOnboarding } from '../useOnboarding';
 
 const POINTS = [
   {
@@ -43,8 +43,7 @@ const POINTS = [
 
 export default function ConsentPage() {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
-  const { updateAnswers } = useOnboarding();
+  const { user, setUser, consentSkipped, skipConsent } = useAuth();
 
   // Coming back with the browser's Back button after agreeing: show it as agreed, don't ask twice.
   const alreadyAgreed = Boolean(user.recording_consent_at);
@@ -56,7 +55,7 @@ export default function ConsentPage() {
     e.preventDefault();
     if (saving) return;
     if (alreadyAgreed) {
-      navigate('/onboarding');
+      navigate(nextStepFor(user, { consentSkipped }));
       return;
     }
     if (!understood) return;
@@ -64,17 +63,20 @@ export default function ConsentPage() {
     setSaving(true);
     setFailed(false);
     try {
-      setUser(await saveConsent({ recording_consent: true }));
-      navigate('/onboarding');
+      const saved = await saveConsent({ recording_consent: true });
+      setUser(saved);
+      // New accounts go on to /onboarding; someone who was asked again after onboarding goes home.
+      navigate(nextStepFor(saved, { consentSkipped }));
     } catch {
       setFailed(true);
       setSaving(false);
     }
   }
 
+  // "Not now" still continues (to /onboarding for a new account). Asked again at the next log in.
   function handleNotNow() {
-    updateAnswers({ consentSkipped: true });
-    navigate('/onboarding');
+    skipConsent();
+    navigate(nextStepFor(user, { consentSkipped: true }));
   }
 
   return (

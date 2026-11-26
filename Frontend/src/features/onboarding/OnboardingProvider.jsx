@@ -4,7 +4,6 @@ import { OnboardingContext } from './onboardingContext';
 
 // path, goals and profile match the PATCH /api/user/onboarding body (docs/api-onboarding.md).
 const EMPTY_ANSWERS = {
-  consentSkipped: false, // picked "Not now" on the consent screen
   path: null,
   // The path they began on before "Not yet" switched them to personal ('member' | 'coach'), so Back still works.
   startedAs: null,

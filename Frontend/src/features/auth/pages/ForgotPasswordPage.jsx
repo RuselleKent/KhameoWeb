@@ -6,7 +6,7 @@ import Input from '../../../components/ui/Input';
 import { formatDuration, useCountdown } from '../../../lib/useCountdown';
 import AuthLayout from '../components/AuthLayout';
 import AuthSuccess from '../components/AuthSuccess';
-import { forgotPassword, getErrorInfo } from '../auth.api';
+import { USE_MOCK, forgotPassword, getErrorInfo } from '../auth.api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_WAIT_SECONDS = 300;
@@ -23,7 +23,8 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState(location.state?.email ?? '');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [generic, setGeneric] = useState(false);
+  // null | 'unavailable' (404: endpoint not built yet) | 'server' (5xx) | 'network'
+  const [failure, setFailure] = useState(null);
   // { email, demoUrl } once the link is sent
   const [sent, setSent] = useState(null);
   const [waitMinutes, setWaitMinutes] = useState(5);
@@ -40,7 +41,7 @@ export default function ForgotPasswordPage() {
     if (!emailLooksValid) return failField('Enter a valid email address.');
 
     setSubmitting(true);
-    setGeneric(false);
+    setFailure(null);
     try {
       const data = await forgotPassword({ email: email.trim() });
       setSent({ email: email.trim(), demoUrl: data.demo_reset_url });
@@ -50,8 +51,12 @@ export default function ForgotPasswordPage() {
         const seconds = info.retryAfter ?? DEFAULT_WAIT_SECONDS;
         setWaitMinutes(Math.max(1, Math.ceil(seconds / 60)));
         restartWait(seconds);
+      } else if (info.status === 404) {
+        setFailure('unavailable');
+      } else if (info.status >= 500) {
+        setFailure('server');
       } else {
-        setGeneric(true);
+        setFailure('network');
       }
     } finally {
       setSubmitting(false);
@@ -72,8 +77,8 @@ export default function ForgotPasswordPage() {
           title="Check your inbox"
           description={`We sent a reset link to ${sent.email}. It works once and expires after a short time. Didn’t get it? Check spam.`}
         >
-          {/* Only the mock API returns demoUrl; with the real API the link arrives by email. */}
-          {sent.demoUrl && (
+          {/* Mock only: with the real API the link arrives by email. */}
+          {USE_MOCK && sent.demoUrl && (
             <Button to={sent.demoUrl} size="block">
               Open reset link (demo)
             </Button>
@@ -127,9 +132,19 @@ export default function ForgotPasswordPage() {
             another link.
           </Alert>
         )}
-        {generic && (
+        {failure === 'unavailable' && (
+          <Alert variant="error" icon={false} title="Password reset isn’t available yet">
+            We can’t send reset links right now. Try again later, or log in if you remember your password.
+          </Alert>
+        )}
+        {failure === 'server' && (
           <Alert variant="error" icon={false} title="Couldn’t send the link">
-            Something went wrong on our side. Check your connection and try again.
+            Something went wrong on our side. Try again in a few minutes.
+          </Alert>
+        )}
+        {failure === 'network' && (
+          <Alert variant="error" icon={false} title="Couldn’t send the link">
+            Check your connection and try again.
           </Alert>
         )}
 

@@ -8,8 +8,10 @@ import GoogleButton from '../../../components/ui/GoogleButton';
 import Input from '../../../components/ui/Input';
 import PasswordInput from '../../../components/ui/PasswordInput';
 import AuthLayout from '../components/AuthLayout';
+import GoogleFlow, { GoogleMockPicker } from '../components/GoogleFlow';
 import { useAuth } from '../../../hooks/useAuth';
 import { getFieldErrors } from '../auth.api';
+import { useGoogleSignIn } from '../useGoogleSignIn';
 import { MIN_PASSWORD_LENGTH, getPasswordStrength } from '../passwordStrength';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -44,8 +46,9 @@ function validate(v) {
 export default function SignupPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { register } = useAuth();
+  const { register, signIn } = useAuth();
   const emailRef = useRef(null);
+  const google = useGoogleSignIn('signup');
 
   const [values, setValues] = useState({
     name: '',
@@ -59,7 +62,7 @@ export default function SignupPage() {
   // greeted with red while still typing.
   const [touched, setTouched] = useState({});
   const [serverErrors, setServerErrors] = useState({});
-  // null | 'emailTaken' | 'generic' | 'google'
+  // null | 'emailTaken' | 'generic'
   const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -149,6 +152,17 @@ export default function SignupPage() {
     }
   }
 
+  // Google sign-up sends confirmed_age and accepted_terms too, so both boxes come first.
+  const googleReady = values.confirmedAge && values.acceptedTerms;
+
+  if (google.phase !== 'idle') {
+    return (
+      <AuthLayout>
+        <GoogleFlow google={google} page="signup" onContinue={signIn} />
+      </AuthLayout>
+    );
+  }
+
   return (
     <AuthLayout>
       <title>Create account · Khameo</title>
@@ -190,13 +204,18 @@ export default function SignupPage() {
           Something went wrong on our side. Check your connection and try again.
         </Alert>
       )}
-      {notice === 'google' && (
-        <Alert variant="info" className="mt-2">
-          Google sign-up isn’t available yet. Use the form below for now.
-        </Alert>
+      <GoogleButton
+        className="mt-4"
+        disabled={!googleReady}
+        aria-describedby={googleReady ? undefined : 'google-hint'}
+        onClick={() => google.start()}
+      />
+      {!googleReady && (
+        <p id="google-hint" className="mt-2 text-center text-xs text-muted">
+          Tick both boxes first
+        </p>
       )}
-
-      <GoogleButton className="mt-4" onClick={() => setNotice('google')} />
+      <GoogleMockPicker />
       <Divider className="mt-4" />
 
       <form noValidate onSubmit={handleSubmit} className="mt-4">

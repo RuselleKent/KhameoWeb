@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import Alert from '../../../components/ui/Alert';
 import Button from '../../../components/ui/Button';
 import Checkbox from '../../../components/ui/Checkbox';
@@ -7,9 +7,12 @@ import Divider from '../../../components/ui/Divider';
 import GoogleButton from '../../../components/ui/GoogleButton';
 import Input from '../../../components/ui/Input';
 import PasswordInput from '../../../components/ui/PasswordInput';
+import AccountLocked from '../components/AccountLocked';
 import AuthLayout from '../components/AuthLayout';
+import GoogleFlow, { GoogleMockPicker } from '../components/GoogleFlow';
 import { useAuth } from '../../../hooks/useAuth';
-import { getFieldErrors } from '../auth.api';
+import { getErrorInfo, getFieldErrors } from '../auth.api';
+import { useGoogleSignIn } from '../useGoogleSignIn';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOCKOUT_HINT = 'After 5 failed tries, log in pauses for 15 minutes.';
@@ -30,10 +33,18 @@ function validate({ email, password }) {
   return errors;
 }
 
+// /auth/google/done sends here (?google=status&email=…) when the popup had no window to report to.
+function googleResultFrom(searchParams) {
+  const phase = searchParams.get('google');
+  return phase ? { phase, email: searchParams.get('email') } : undefined;
+}
+
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, signIn } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const google = useGoogleSignIn('login', googleResultFrom(searchParams));
   const emailRef = useRef(null);
   const passwordRef = useRef(null);
 
@@ -42,8 +53,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(false);
   const [errors, setErrors] = useState({});
-  // Which message box shows above the Google button: null | 'noAccount' | 'throttled' | 'generic' | 'google'
+  // Which message box shows above the Google button: null | 'noAccount' | 'generic'
   const [notice, setNotice] = useState(null);
+  // Account locked screen (Figma 1.7): null, or { retryAfter } (429; undefined for a 403)
+  const [locked, setLocked] = useState(null);
   // After a wrong-password reply we know the email exists: show its green "confirmed" border.
   const [emailConfirmed, setEmailConfirmed] = useState(false);
   const [wrongPassword, setWrongPassword] = useState(false);
@@ -86,15 +99,18 @@ export default function LoginPage() {
     setWrongPassword(false);
 
     try {
-      // Stores the user; RedirectIfAuthenticated then moves on to the page they came from,
-      // /home, or whichever step is unfinished (verify email, onboarding).
+      // Every email log in asks for an emailed code first (docs/api-auth.md section 2).
       const result = await login({ email: email.trim(), password, remember });
       if (result.two_factor_required) {
         // Keep `from` so the verify page can still return to the page they wanted.
-        navigate('/login/verify', { state: { email: email.trim(), from: location.state?.from } });
+        navigate('/login/verify', {
+          state: { email: email.trim(), from: location.state?.from, verification: result },
+        });
       }
+      // Otherwise the user is stored: RedirectIfAuthenticated moves on to their next step.
     } catch (error) {
       const fieldErrors = getFieldErrors(error);
+      const info = getErrorInfo(error);
 
       if (fieldErrors.email) {
         setErrors({ email: fieldErrors.email });
@@ -105,14 +121,33 @@ export default function LoginPage() {
         setEmailConfirmed(true);
         setWrongPassword(true);
         passwordRef.current?.focus();
-      } else if (error?.response?.status === 429) {
-        setNotice('throttled');
+      } else if (info.status === 403) {
+        // "This account can’t log in."
+        setLocked({ retryAfter: undefined });
+      } else if (info.status === 429) {
+        setLocked({ retryAfter: info.retryAfter ?? 900 });
       } else {
         setNotice('generic');
       }
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (locked) {
+    return (
+      <AuthLayout>
+        <AccountLocked email={email.trim()} retryAfter={locked.retryAfter} onBack={() => setLocked(null)} />
+      </AuthLayout>
+    );
+  }
+
+  if (google.phase !== 'idle') {
+    return (
+      <AuthLayout>
+        <GoogleFlow google={google} page="login" onContinue={signIn} />
+      </AuthLayout>
+    );
   }
 
   return (
@@ -148,24 +183,15 @@ export default function LoginPage() {
           Check the spelling, or create a new account
         </Alert>
       )}
-      {notice === 'throttled' && (
-        <Alert variant="error" icon={false} title="Too many tries" className="mt-4">
-          Log in is paused for 15 minutes. Try again later, or reset your password.
-        </Alert>
-      )}
       {notice === 'generic' && (
         <Alert variant="error" icon={false} title="Couldn’t log in" className="mt-4">
           Something went wrong on our side. Check your connection and try again.
         </Alert>
       )}
-      {notice === 'google' && (
-        <Alert variant="info" className="mt-4">
-          Google sign-in isn’t available yet. Log in with your email and password for now.
-        </Alert>
-      )}
 
       <div className={notice ? 'mt-4' : 'mt-8'}>
-        <GoogleButton onClick={() => setNotice('google')} />
+        <GoogleButton onClick={() => google.start()} />
+        <GoogleMockPicker />
         <Divider className="my-2" />
 
         <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
