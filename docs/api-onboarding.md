@@ -1,9 +1,12 @@
-# Onboarding API contract (draft)
+# Onboarding API contract
 
-Status: **draft from the frontend, needs Russel's review.** Every endpoint below is mocked in
-`Frontend/src/features/onboarding/onboarding.api.js` with exactly these shapes (mock data in
-`Frontend/src/mockdata/onboarding.js`). When an endpoint is ready, set `USE_MOCK = false` there;
-no page code should need to change.
+Status:
+- **Built in Laravel** and matching this document (Russel reviews): sections **1, 2, 2a, 2b, 3** and the
+  user fields (`Backend/app/Http/Controllers/Onboarding`, tests in `Backend/tests/Feature/Onboarding`).
+- **Still mocked** in `Frontend/src/features/onboarding/onboarding.api.js`: 2c AI suggestions
+  (`AI_USE_MOCK`; the button shows "Soon" and doesn't call it) and sections 4–8, invites, groups, two-factor
+  setup and host applications (`GROUPS_AND_HOSTS_USE_MOCK`), until the Groups module. Those sections are
+  still a draft; `two_factor_confirmed_at` and `host_status` exist on the user but only the mocks change them.
 
 Conventions (JSON, Sanctum cookies, CSRF, 422 and 429 shapes) are the same as in `docs/api-auth.md`.
 
@@ -16,6 +19,7 @@ Changes:
 - Rev 3 (Jenny's decisions): `code` everywhere, username check, remove photo, 5 MB photos. Log in with
   two-factor is in `docs/api-auth.md` section 2.
 - Rev 7 (Jenny's decisions): speaking **roles with audiences** replace `occupation`; AI audience suggestions (2c).
+- Rev 8 (built): sections 1–3 in Laravel; photos on the public disk for now; second finish is a no-op.
 - Rev 6 (Jenny's decisions): `host_status`, school / community hosts, `GET /api/host-applications/latest`, coach
   upgrade, invite code format.
 - Rev 5: host path; `host_type`, `institution`, `role_title` and the school email endpoints (section 8).
@@ -39,8 +43,9 @@ Changes:
 | 8c | `GET /api/host-applications/latest` | /host-status | signed in, verified |
 | 8 | `POST /api/host-applications` | host path, later Groups and Settings | signed in, verified, 2FA confirmed |
 
-Every endpoint returns **401** when nobody is signed in, and **403** `{ "code": "email_unverified" }`
-when the email isn't verified **[proposed]**.
+Every endpoint returns **401** when nobody is signed in, and **403**
+`{ "message": "Verify your email first.", "code": "email_unverified" }` when the email isn't verified
+(`App\Http\Middleware\EnsureEmailIsVerified`; built for sections 1–3).
 
 ### 403 codes
 
@@ -48,7 +53,7 @@ when the email isn't verified **[proposed]**.
 |---|---|---|
 | `consent_required` | a recording was sent without active consent | opens the consent screen |
 | `two_factor_required` | a host application was sent without confirmed 2FA | opens the 2FA step |
-| `email_unverified` **[proposed]** | email not verified yet | opens /verify-email |
+| `email_unverified` | email not verified yet | opens /verify-email |
 
 Shape: `{ "message": "…", "code": "consent_required" }`.
 
@@ -65,11 +70,11 @@ The user object is the one in `docs/api-auth.md`, plus:
 | `username` | string or `null` | Unique handle, without the `@`. |
 | `bio` | string or `null` | |
 | `roles` | array | Speaking roles: `[{ "name": "Student", "audiences": ["Classmates"] }]`, `[]` when there are none. Who the user speaks as, **not** a group role. |
-| `avatar_url` | string or `null` | |
+| `avatar_url` | string or `null` | Full URL of the photo (Laravel public disk for now). |
 | `two_factor_confirmed_at` | timestamp or `null` | When two-factor was confirmed. |
 | `host_status` | string | `none`, `pending`, `verified` or `rejected`. **Create group is allowed only when `verified`**; enforce it in the API too. |
 
-Profile fields sit directly on the user **[proposed]**. Group roles (Host, Coach, Member) are **not** part
+Profile fields sit directly on the user (columns on `users`; `roles` and `goals` are JSON). Group roles (Host, Coach, Member) are **not** part
 of the profile; they come from group membership.
 
 ---
@@ -86,9 +91,10 @@ Request:
 
 Rules: `recording_consent` required, boolean.
 - `true` sets `recording_consent_at` to now and `consent_version` to the current version (`"2026-11"`).
-  The server decides the version. Agreeing again to the same version keeps the original time **[proposed]**.
+  The server decides the version (`config/khameo.php` → `consent_version`). Agreeing again to the same
+  version keeps the original time.
 - `false` withdraws consent (from Settings): clears `recording_consent_at`. `consent_version` keeps the
-  last version agreed to **[proposed]**.
+  last version agreed to.
 
 **200** — the user:
 ```json
@@ -125,15 +131,17 @@ Rules: `recording_consent` required, boolean.
 
 ## 2. Upload a photo — `POST /api/user/avatar`
 
-`multipart/form-data`, one field: `avatar`, required, JPG, PNG or WEBP, up to **5 MB**. The backend may
-resize it. Stored in Supabase Storage. Replaces the previous photo and sets `avatar_url` on the user.
+`multipart/form-data`, one field: `avatar`, required, JPG, PNG or WEBP (checked by content), up to **5 MB**.
+Stored as is on Laravel's **public disk** (`storage/app/public/avatars`, served from `/storage` after
+`php artisan storage:link`) for now; Supabase Storage later. Replaces (and deletes) the previous photo.
+Throttle: 10 a minute.
 
 **200**
 ```json
 { "avatar_url": "https://…/avatars/3.webp" }
 ```
 
-**422** **[proposed messages]**
+**422**
 | Field | When | Message |
 |---|---|---|
 | `avatar` | missing | Choose a photo. |
@@ -141,7 +149,7 @@ resize it. Stored in Supabase Storage. Replaces the previous photo and sets `ava
 
 ### 2a. Remove the photo — `DELETE /api/user/avatar`
 
-**200** — also when there was no photo **[proposed]**:
+**200** — also when there was no photo (the file is deleted):
 ```json
 { "avatar_url": null }
 ```
@@ -153,18 +161,23 @@ The frontend asks for confirmation first. Uploading and removing save right away
 ```json
 { "available": true }
 ```
-- Compares regardless of case, and the user's own username counts as available **[proposed]**.
+- Compares regardless of case, and the user's own username counts as available.
 - The profile step calls it **400 ms after typing stops** and shows "That username is taken." under the
   field right away. It only calls once the format is valid.
 - It is a hint, not a reservation: section 3 still validates.
 
-**422** **[proposed]** — `username` has the wrong length or characters: "Use 3–20 letters, numbers or underscores."
+- The profile step also uses it to **suggest** a username from the real name ("Jenny Angeles" → `jenny_angeles`,
+  then `jenny_angeles2`, `jennyangeles`, `jennyangeles2`, `jenny_angeles3` …), filled in on the first visit.
 
-**429** **[proposed]** — too many checks (it could be used to list usernames): `{ "message": "…", "retry_after": 30 }`
+**422** — `username` missing, wrong length or characters: "Use 3–20 letters, numbers or underscores."
+
+**429** — more than 60 checks a minute (route throttle; Laravel's plain 429 with a `Retry-After` header).
+The field then says it couldn't check, and onboarding can still continue (section 3 checks again).
 
 ### 2c. Suggest audiences — `POST /api/ai/suggest-audiences`
 
-Optional help on the profile step. The default audiences are static in the app
+**Not built** (mocked, `AI_USE_MOCK`). The profile step shows "✦ Suggest more with AI" disabled with a
+"Soon" badge and doesn't call this yet. Optional help on the profile step. The default audiences are static in the app
 (`Frontend/src/features/onboarding/audiences.js`), so the step works without AI. The backend calls Gemini.
 
 Request: `existing_audiences` is every audience listed for that role now, checked or not.
@@ -210,25 +223,27 @@ Request:
 | Field | Rules |
 |---|---|
 | `path` | required: `personal`, `member`, `coach` or `host` |
-| `goals` | array, 0–3 items (the step can be skipped). Values listed below **[proposed]** |
+| `goals` | array, 0–3 items (the step can be skipped). Values listed below. Stored on the user (`goals`, not in the user object) |
 | `profile.display_name` | required, up to 80 characters **[proposed limit]** |
-| `profile.username` | required, unique, 3–20 characters, letters / numbers / underscore. Unique regardless of case **[proposed]** |
+| `profile.username` | required, unique, 3–20 characters, letters / numbers / underscore. Unique regardless of case (unique index on `lower(username)`) |
 | `profile.bio` | optional, up to 160 characters |
 | `profile.roles` | optional array, up to **5**. Replaces `occupation` |
-| `profile.roles.*.name` | required, 1–40 characters, unique regardless of case **[proposed]**. The app offers Student, Teacher or faculty, Working professional, Researcher, Event host or emcee, or a custom role |
+| `profile.roles.*.name` | required, 1–40 characters, unique regardless of case. The app offers Student, Teacher or faculty, Working professional, Researcher, Event host or emcee, or a custom role |
 | `profile.roles.*.audiences` | array of up to **20** names, 1–40 characters each. Only checked audiences are sent; may be empty |
 
 Goal values, from the Figma "What do you want to improve?" step: `fewer_filler_words`, `steady_pace`,
 `confident_tone`, `clear_opening`, `strong_closing`, `stay_on_time`.
 
+Text is trimmed and runs of spaces become one; an empty `bio` is stored as `null`.
+
 **200** — the user, with `onboarded_at`, `onboarding_path` and the profile fields set. From then on the
-route guards send the user to `/home`.
+route guards send the user to `/home`. Sent again after onboarding, it changes nothing and returns the user.
 
 `path` is only a starting point, stored as `onboarding_path` for reporting. It grants no group role and
 there is **no endpoint to change it**. Later, users join groups with section 5 and apply as Host with
 section 8, from Groups or Settings.
 
-**422** **[proposed messages]**
+**422**
 | Field | When | Message |
 |---|---|---|
 | `path` | missing or unknown | Choose how you want to use Khameo. |

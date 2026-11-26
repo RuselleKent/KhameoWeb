@@ -83,23 +83,23 @@ it('counts down wrong attempts and then locks the code', function () {
 
     $this->postJson('/api/email/verify', ['code' => $wrongCode])
         ->assertUnprocessable()
-        ->assertJsonPath('error', 'code_invalid')
+        ->assertJsonPath('code', 'code_invalid')
         ->assertJsonPath('attempts_left', 2)
         ->assertJsonPath('errors.code.0', 'That code isn’t right.');
 
     $this->postJson('/api/email/verify', ['code' => $wrongCode])
         ->assertUnprocessable()
-        ->assertJsonPath('error', 'code_invalid')
+        ->assertJsonPath('code', 'code_invalid')
         ->assertJsonPath('attempts_left', 1);
 
     $this->postJson('/api/email/verify', ['code' => $wrongCode])
         ->assertUnprocessable()
-        ->assertJsonPath('error', 'too_many_attempts')
+        ->assertJsonPath('code', 'too_many_attempts')
         ->assertJsonPath('attempts_left', 0);
 
     $this->postJson('/api/email/verify', ['code' => $code])
         ->assertUnprocessable()
-        ->assertJsonPath('error', 'too_many_attempts');
+        ->assertJsonPath('code', 'too_many_attempts');
 
     expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
 });
@@ -113,14 +113,14 @@ it('rejects a code older than 10 minutes', function () {
     $this->actingAs($user)
         ->postJson('/api/email/verify', ['code' => $code])
         ->assertUnprocessable()
-        ->assertJsonPath('error', 'code_expired');
+        ->assertJsonPath('code', 'code_expired');
 });
 
 it('asks for a new code when none was ever sent', function () {
     $this->actingAs(unverifiedUser())
         ->postJson('/api/email/verify', ['code' => '123456'])
         ->assertUnprocessable()
-        ->assertJsonPath('error', 'code_expired');
+        ->assertJsonPath('code', 'code_expired');
 });
 
 it('treats an already verified user as done', function () {
